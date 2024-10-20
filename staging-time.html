@@ -1,0 +1,25 @@
+<html>
+<head>
+  <title>Latest Staging Time</title>
+  <script>
+    function loadCellValue() {
+      var spreadsheetId = '1PHXNh74wemifZlv91l9hOZ-1-WTtrcp7gI8_-JR872c';  // Your Google Sheet ID
+      var range = 'Sheet1!B1';  // Specify the range (e.g., A1)
+      var apiKey = 'YOUR_API_KEY';  // Your Google API Key
+
+      var url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?key=${apiKey}`;
+
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('stagingTime').textContent = data.values[0][0];
+        })
+        .catch(error => console.error('Error fetching data:', error));
+    }
+  </script>
+</head>
+<body onload="loadCellValue()">
+  <h1>Latest Badminton Staging Time</h1>
+  <div id="stagingTime"></div>
+</body>
+</html>
