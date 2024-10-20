@@ -1,9 +1,31 @@
 <html>
 <head>
   <title>Tournament Staging Times</title>
-  // https://yorkliu88.github.io/tournament-staging-time/staging-time.html
+  <style>
+    .staging-container {
+      display: flex;
+      justify-content: flex-start;
+      margin-bottom: 10px;
+    }
+    
+    .location {
+      font-weight: bold;
+      width: 200px; /* Set a fixed width for the location column */
+    }
+    
+    .time {
+      margin-left: 10px;
+    }
+    
+    .last-updated-container {
+      display: flex;
+      justify-content: flex-start;
+      margin-top: 20px; /* Add some space above */
+    }
+  </style>
   <script>
     function loadStagingTimes() {
+
       var spreadsheetId = '1PHXNh74wemifZlv91l9hOZ-1-WTtrcp7gI8_-JR872c';  // Your Google Sheet ID
       var automallTime = 'Sheet1!B1';  // Specify the range (e.g., A1)
       var missionTime = 'Sheet1!B2';  // Specify the range (e.g., A1)
@@ -11,7 +33,7 @@
 
       // URLs to fetch staging times for AutoMall (A1) and Mission (B1)
       var urlAutoMall = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${automallTime}?key=${apiKey}`;
-      var urlMission = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${missionTime}?key=${apiKey}`;
+      var urlMission = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!B1?key=${apiKey}`;
 
       // Fetch staging time for AutoMall
       fetch(urlAutoMall)
@@ -42,31 +64,35 @@
         .then(response => response.json())
         .then(data => {
           var lastModified = new Date(data.modifiedTime);
-          document.getElementById('lastUpdated').textContent = 'Last Updated: ' + lastModified.toLocaleString();
+          document.getElementById('lastUpdatedTime').textContent = 'Last Updated: ' + lastModified.toLocaleString();
         })
         .catch(error => {
-          document.getElementById('lastUpdated').textContent = 'Error fetching last updated time';
+          document.getElementById('lastUpdatedTime').textContent = 'Error fetching last updated time';
           console.error('Error fetching last updated time:', error);
         });
-
     }
 
     // Automatically refresh data every 30 seconds
-    setInterval(loadStagingTimes, 3000000000);  // 30,000 milliseconds = 30 seconds
+    setInterval(loadStagingTimes, 30000);  // 30,000 milliseconds = 30 seconds
   </script>
 </head>
 <body onload="loadStagingTimes()">
-  <div>
-    <strong>AutoMall Location: </strong>
-    <span id="stagingTimeAutoMall">Loading...</span>
+  <h1>Current Tournament Staging Times</h1>
+  
+  <div class="staging-container">
+    <div class="location">AutoMall Location:</div>
+    <div class="time" id="stagingTimeAutoMall">Loading...</div>
   </div>
   
-  <div>
-    <strong>Mission Location: </strong>
-    <span id="stagingTimeMission">Loading...</span>
+  <div class="staging-container">
+    <div class="location">Mission Location:</div>
+    <div class="time" id="stagingTimeMission">Loading...</div>
   </div>
 
-  <h4 id="lastUpdated">Last Updated: Loading...</h4>
-
+  <div class="last-updated-container">
+    <div class="location">Last Updated:</div>
+    <div class="time" id="lastUpdatedTime">Loading...</div>
+  </div>
 </body>
 </html>
+
