@@ -1,25 +1,51 @@
 <html>
 <head>
-  <title>Latest Staging Time</title>
+  <title>Tournament Staging Times</title>
   <script>
-    function loadCellValue() {
+    function loadStagingTimes() {
       var spreadsheetId = '1PHXNh74wemifZlv91l9hOZ-1-WTtrcp7gI8_-JR872c';  // Your Google Sheet ID
-      var range = 'Sheet1!B1';  // Specify the range (e.g., A1)
-      var apiKey = 'YOUR_API_KEY';  // Your Google API Key
+      var automallTime = 'Sheet1!B1';  // Specify the range (e.g., A1)
+      var missionTime = 'Sheet1!B2';  // Specify the range (e.g., A1)
+      var apiKey = 'AIzaSyAwq2XmrASVwh8Eq6D7LAgunSBAST6Gup4';          // Replace with your Google API Key
 
-      var url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?key=${apiKey}`;
+      // URLs to fetch staging times for AutoMall (A1) and Mission (B1)
+      var urlAutoMall = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${automallTime}?key=${apiKey}`;
+      var urlMission = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${missionTime}?key=${apiKey}`;
 
-      fetch(url)
+      // Fetch staging time for AutoMall
+      fetch(urlAutoMall)
         .then(response => response.json())
         .then(data => {
-          document.getElementById('stagingTime').textContent = data.values[0][0];
+          document.getElementById('stagingTimeAutoMall').textContent = data.values[0][0];
         })
-        .catch(error => console.error('Error fetching data:', error));
+        .catch(error => {
+          document.getElementById('stagingTimeAutoMall').textContent = 'Error loading data';
+          console.error('Error fetching AutoMall data:', error);
+        });
+
+      // Fetch staging time for Mission
+      fetch(urlMission)
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('stagingTimeMission').textContent = data.values[0][0];
+        })
+        .catch(error => {
+          document.getElementById('stagingTimeMission').textContent = 'Error loading data';
+          console.error('Error fetching Mission data:', error);
+        });
     }
+
+    // Automatically refresh data every 30 seconds
+    setInterval(loadStagingTimes, 30000);  // 30,000 milliseconds = 30 seconds
   </script>
 </head>
-<body onload="loadCellValue()">
-  <h1>Latest Badminton Staging Time</h1>
-  <div id="stagingTime"></div>
+<body onload="loadStagingTimes()">
+  <h1>Current Tournament Staging Times</h1>
+
+  <h2>AutoMall Location</h2>
+  <div id="stagingTimeAutoMall">Loading...</div>
+
+  <h2>Mission Location</h2>
+  <div id="stagingTimeMission">Loading...</div>
 </body>
 </html>
