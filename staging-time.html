@@ -17,11 +17,6 @@
       margin-left: 10px;
     }
     
-    .last-updated-container {
-      display: flex;
-      justify-content: flex-start;
-      margin-top: 20px; /* Add some space above */
-    }
   </style>
   <script>
     function loadStagingTimes() {
@@ -33,7 +28,7 @@
 
       // URLs to fetch staging times for AutoMall (A1) and Mission (B1)
       var urlAutoMall = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${automallTime}?key=${apiKey}`;
-      var urlMission = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!B1?key=${apiKey}`;
+      var urlMission = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${missionTime}?key=${apiKey}`;
 
       // Fetch staging time for AutoMall
       fetch(urlAutoMall)
@@ -87,10 +82,7 @@
     <div class="time" id="stagingTimeMission">Loading...</div>
   </div>
 
-  <div class="last-updated-container">
-    <div class="location">Last Updated:</div>
-    <div class="time" id="lastUpdatedTime">Loading...</div>
-  </div>
+  <p id="lastUpdatedTime">Loading...</p>
 </body>
 </html>
 
