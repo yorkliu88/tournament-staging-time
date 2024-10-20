@@ -2,35 +2,51 @@
 <head>
   <title>Tournament Staging Times</title>
   <style>
-    .staging-container {
+    body {
       display: flex;
-      justify-content: flex-start;
-      margin-bottom: 10px;
+      justify-content: center;
+      align-items: center;
+      height: 100vh; /* Full viewport height */
+      margin: 0;
+      text-align: center; /* Center the text content */
+      font-family: Arial, sans-serif;
     }
     
+    .staging-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 20px; /* Space between rows */
+    }
+
     .location {
       font-weight: bold;
-      width: 200px; /* Set a fixed width for the location column */
+      width: 200px;
+      text-align: right; /* Align location name to the right */
+      margin-right: 10px; /* Space between location name and time */
     }
     
     .time {
-      margin-left: 10px;
+      text-align: left; /* Align staging time to the left */
     }
-    
+
+    .last-updated-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-top: 20px;
+    }
   </style>
   <script>
     function loadStagingTimes() {
-
       var spreadsheetId = '1PHXNh74wemifZlv91l9hOZ-1-WTtrcp7gI8_-JR872c';  // Your Google Sheet ID
-      var automallTime = 'Sheet1!B1';  // Specify the range (e.g., A1)
-      var missionTime = 'Sheet1!B2';  // Specify the range (e.g., A1)
-      var apiKey = 'AIzaSyAwq2XmrASVwh8Eq6D7LAgunSBAST6Gup4';          // Replace with your Google API Key
+      var apiKey = 'AIzaSyAwq2XmrASVwh8Eq6D7LAgunSBAST6Gup4';             // Your Google API Key
 
-      // URLs to fetch staging times for AutoMall (A1) and Mission (B1)
-      var urlAutoMall = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${automallTime}?key=${apiKey}`;
-      var urlMission = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${missionTime}?key=${apiKey}`;
+      // URLs to fetch staging times for AutoMall (B1) and Mission (B2)
+      var urlAutoMall = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!B1?key=${apiKey}`;
+      var urlMission = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!B2?key=${apiKey}`;
 
-      // Fetch staging time for AutoMall
+      // Fetch staging time for AutoMall (B1)
       fetch(urlAutoMall)
         .then(response => response.json())
         .then(data => {
@@ -41,7 +57,7 @@
           console.error('Error fetching AutoMall data:', error);
         });
 
-      // Fetch staging time for Mission
+      // Fetch staging time for Mission (B2)
       fetch(urlMission)
         .then(response => response.json())
         .then(data => {
@@ -68,21 +84,27 @@
     }
 
     // Automatically refresh data every 30 seconds
-    setInterval(loadStagingTimes, 30000000);  // 30,000 milliseconds = 30 seconds
+    setInterval(loadStagingTimes, 30000);  // 30,000 milliseconds = 30 seconds
   </script>
 </head>
 <body onload="loadStagingTimes()">
-  <div class="staging-container">
-    <div class="location">AutoMall Location:</div>
-    <div class="time" id="stagingTimeAutoMall">Loading...</div>
-  </div>
-  
-  <div class="staging-container">
-    <div class="location">Mission Location:</div>
-    <div class="time" id="stagingTimeMission">Loading...</div>
-  </div>
+  <div>
+    <h1>Current Tournament Staging Times</h1>
+    
+    <div class="staging-container">
+      <div class="location">AutoMall:</div>
+      <div class="time" id="stagingTimeAutoMall">Loading...</div>
+    </div>
+    
+    <div class="staging-container">
+      <div class="location">Mission:</div>
+      <div class="time" id="stagingTimeMission">Loading...</div>
+    </div>
 
-  <p id="lastUpdatedTime">Loading...</p>
+    <div class="last-updated-container">
+      <div class="location">Last Updated:</div>
+      <div class="time" id="lastUpdatedTime">Loading...</div>
+    </div>
+  </div>
 </body>
 </html>
-
