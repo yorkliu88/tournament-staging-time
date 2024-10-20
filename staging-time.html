@@ -1,6 +1,7 @@
 <html>
 <head>
   <title>Tournament Staging Times</title>
+  // https://yorkliu88.github.io/tournament-staging-time/staging-time.html
   <script>
     function loadStagingTimes() {
       var spreadsheetId = '1PHXNh74wemifZlv91l9hOZ-1-WTtrcp7gI8_-JR872c';  // Your Google Sheet ID
@@ -33,17 +34,39 @@
           document.getElementById('stagingTimeMission').textContent = 'Error loading data';
           console.error('Error fetching Mission data:', error);
         });
+
+      // Fetch last modified time of the Google Sheet
+      var urlModifiedTime = `https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=modifiedTime&key=${apiKey}`;
+
+      fetch(urlModifiedTime)
+        .then(response => response.json())
+        .then(data => {
+          var lastModified = new Date(data.modifiedTime);
+          document.getElementById('lastUpdated').textContent = 'Last Updated: ' + lastModified.toLocaleString();
+        })
+        .catch(error => {
+          document.getElementById('lastUpdated').textContent = 'Error fetching last updated time';
+          console.error('Error fetching last updated time:', error);
+        });
+
     }
 
     // Automatically refresh data every 30 seconds
-    setInterval(loadStagingTimes, 300000000);  // 30,000 milliseconds = 30 seconds
+    setInterval(loadStagingTimes, 3000000000);  // 30,000 milliseconds = 30 seconds
   </script>
 </head>
 <body onload="loadStagingTimes()">
- <h2>AutoMall Location</h2>
-  <div id="stagingTimeAutoMall">Loading...</div>
+  <div>
+    <strong>AutoMall Location: </strong>
+    <span id="stagingTimeAutoMall">Loading...</span>
+  </div>
+  
+  <div>
+    <strong>Mission Location: </strong>
+    <span id="stagingTimeMission">Loading...</span>
+  </div>
 
-  <h2>Mission Location</h2>
-  <div id="stagingTimeMission">Loading...</div>
+  <h4 id="lastUpdated">Last Updated: Loading...</h4>
+
 </body>
 </html>
