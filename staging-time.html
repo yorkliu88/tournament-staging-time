@@ -48,7 +48,7 @@
         .then(response => response.json())
         .then(data => {
           const stagingTime = new Date(`1970-01-01T${data.values[0][0]}:00`);
-          document.getElementById('stagingTimeAutoMall').textContent = stagingTime.toLocaleTimeString();
+          document.getElementById('stagingTimeAutoMall').textContent = stagingTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           updateTimeColor(stagingTime, 'stagingTimeAutoMall');
         })
         .catch(error => {
@@ -61,7 +61,7 @@
         .then(response => response.json())
         .then(data => {
           const stagingTime = new Date(`1970-01-01T${data.values[0][0]}:00`);
-          document.getElementById('stagingTimeMission').textContent = stagingTime.toLocaleTimeString();
+          document.getElementById('stagingTimeMission').textContent = stagingTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           updateTimeColor(stagingTime, 'stagingTimeMission');
         })
         .catch(error => {
@@ -113,7 +113,7 @@
     }
 
     // Automatically refresh data every 30 seconds
-    setInterval(loadStagingTimes, 30000000);  // 30,000 milliseconds = 30 seconds
+    setInterval(loadStagingTimes, 30000);  // 30,000 milliseconds = 30 seconds
   </script>
 </head>
 <body onload="loadStagingTimes()">
