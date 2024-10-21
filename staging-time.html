@@ -47,7 +47,9 @@
       fetch(urlAutoMall)
         .then(response => response.json())
         .then(data => {
-          document.getElementById('stagingTimeAutoMall').textContent = data.values[0][0];
+          const stagingTime = new Date(`1970-01-01T${data.values[0][0]}:00`);
+          document.getElementById('stagingTimeAutoMall').textContent = stagingTime.toLocaleTimeString();
+          updateTimeColor(stagingTime, 'stagingTimeAutoMall');
         })
         .catch(error => {
           document.getElementById('stagingTimeAutoMall').textContent = 'Error';
@@ -58,7 +60,9 @@
       fetch(urlMission)
         .then(response => response.json())
         .then(data => {
-          document.getElementById('stagingTimeMission').textContent = data.values[0][0];
+          const stagingTime = new Date(`1970-01-01T${data.values[0][0]}:00`);
+          document.getElementById('stagingTimeMission').textContent = stagingTime.toLocaleTimeString();
+          updateTimeColor(stagingTime, 'stagingTimeMission');
         })
         .catch(error => {
           document.getElementById('stagingTimeMission').textContent = 'Error';
@@ -77,6 +81,35 @@
           document.getElementById('lastUpdatedTime').textContent = 'Error';
           console.error('Error fetching last updated time:', error);
         });
+    }
+
+    function updateTimeColor(stagingTime, elementId) {
+      const currentTime = new Date();
+      const currentHours = currentTime.getHours();
+      const currentMinutes = currentTime.getMinutes();
+
+      // Get the staging time hours and minutes
+      const stagingHours = stagingTime.getHours();
+      const stagingMinutes = stagingTime.getMinutes();
+
+      // Calculate time differences in minutes
+      const currentTotalMinutes = currentHours * 60 + currentMinutes;
+      const stagingTotalMinutes = stagingHours * 60 + stagingMinutes;
+
+      const thirtyMinutesInMs = 30; // 30 minutes
+
+      const timeDifference = stagingTotalMinutes - currentTotalMinutes;
+
+      if (timeDifference < 0) {
+        // Delay: current time is after staging time
+        document.getElementById(elementId).style.color = 'red';
+      } else if (timeDifference <= thirtyMinutesInMs) {
+        // Current time is within 30 minutes before staging time
+        document.getElementById(elementId).style.color = 'black';
+      } else {
+        // Current time is more than 30 minutes before staging time
+        document.getElementById(elementId).style.color = 'green';
+      }
     }
 
     // Automatically refresh data every 30 seconds
