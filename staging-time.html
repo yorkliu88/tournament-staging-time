@@ -8,33 +8,26 @@
       align-items: center;
       height: 100vh; /* Full viewport height */
       margin: 0;
-      text-align: center; /* Center the text content */
       font-family: Arial, sans-serif;
+      font-size: small;
     }
     
     .staging-container {
       display: flex;
       justify-content: center;
       align-items: center;
-      margin-bottom: 20px; /* Space between rows */
+      margin-bottom: 5px; /* Smaller space between lines */
     }
 
     .location {
       font-weight: bold;
-      width: 200px;
+      width: 100px;
       text-align: right; /* Align location name to the right */
-      margin-right: 10px; /* Space between location name and time */
+      margin-right: 5px; /* Minimal space between location name and time */
     }
     
     .time {
       text-align: left; /* Align staging time to the left */
-    }
-
-    .last-updated-container {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin-top: 20px;
     }
   </style>
   <script>
@@ -53,7 +46,7 @@
           document.getElementById('stagingTimeAutoMall').textContent = data.values[0][0];
         })
         .catch(error => {
-          document.getElementById('stagingTimeAutoMall').textContent = 'Error loading data';
+          document.getElementById('stagingTimeAutoMall').textContent = 'Error';
           console.error('Error fetching AutoMall data:', error);
         });
 
@@ -64,22 +57,8 @@
           document.getElementById('stagingTimeMission').textContent = data.values[0][0];
         })
         .catch(error => {
-          document.getElementById('stagingTimeMission').textContent = 'Error loading data';
+          document.getElementById('stagingTimeMission').textContent = 'Error';
           console.error('Error fetching Mission data:', error);
-        });
-
-      // Fetch last modified time of the Google Sheet
-      var urlModifiedTime = `https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=modifiedTime&key=${apiKey}`;
-
-      fetch(urlModifiedTime)
-        .then(response => response.json())
-        .then(data => {
-          var lastModified = new Date(data.modifiedTime);
-          document.getElementById('lastUpdatedTime').textContent = 'Last Updated: ' + lastModified.toLocaleString();
-        })
-        .catch(error => {
-          document.getElementById('lastUpdatedTime').textContent = 'Error fetching last updated time';
-          console.error('Error fetching last updated time:', error);
         });
     }
 
@@ -89,8 +68,6 @@
 </head>
 <body onload="loadStagingTimes()">
   <div>
-    <h1>Current Tournament Staging Times</h1>
-    
     <div class="staging-container">
       <div class="location">AutoMall:</div>
       <div class="time" id="stagingTimeAutoMall">Loading...</div>
@@ -99,11 +76,6 @@
     <div class="staging-container">
       <div class="location">Mission:</div>
       <div class="time" id="stagingTimeMission">Loading...</div>
-    </div>
-
-    <div class="last-updated-container">
-      <div class="location">Last Updated:</div>
-      <div class="time" id="lastUpdatedTime">Loading...</div>
     </div>
   </div>
 </body>
