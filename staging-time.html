@@ -27,6 +27,12 @@
     .time {
       margin-left: 5px; /* Space between location and time */
     }
+
+    .last-updated {
+      margin-top: 10px; /* Space above the Last Updated text */
+      font-size: x-small; /* Make the Last Updated time smaller */
+      color: gray;
+    }
   </style>
   <script>
     function loadStagingTimes() {
@@ -58,6 +64,19 @@
           document.getElementById('stagingTimeMission').textContent = 'Error';
           console.error('Error fetching Mission data:', error);
         });
+
+      // Fetch last modified time of the Google Sheet
+      var urlModifiedTime = `https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=modifiedTime&key=${apiKey}`;
+      fetch(urlModifiedTime)
+        .then(response => response.json())
+        .then(data => {
+          var lastModified = new Date(data.modifiedTime);
+          document.getElementById('lastUpdatedTime').textContent = 'Last Updated: ' + lastModified.toLocaleString();
+        })
+        .catch(error => {
+          document.getElementById('lastUpdatedTime').textContent = 'Error';
+          console.error('Error fetching last updated time:', error);
+        });
     }
 
     // Automatically refresh data every 30 seconds
@@ -75,6 +94,8 @@
       <span class="location">Mission:</span>
       <span class="time" id="stagingTimeMission">Loading...</span>
     </div>
+
+    <div class="last-updated" id="lastUpdatedTime">Loading...</div>
   </div>
 </body>
 </html>
