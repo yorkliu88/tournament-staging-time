@@ -9,6 +9,7 @@
       margin: 0;
       font-family: Arial, sans-serif;
       font-size: small;
+      text-align: center; /* Center the text in the container */
     }
     
     .staging-container {
@@ -20,13 +21,11 @@
 
     .location {
       font-weight: bold;
-      width: 100px;
-      text-align: right; /* Align location name to the right */
-      margin-right: 5px; /* Minimal space between location name and time */
+      margin-right: 5px; /* Space between location and time */
     }
     
     .time {
-      text-align: left; /* Align staging time to the left */
+      margin-left: 5px; /* Space between location and time */
     }
   </style>
   <script>
@@ -68,13 +67,13 @@
 <body onload="loadStagingTimes()">
   <div>
     <div class="staging-container">
-      <div class="location">AutoMall:</div>
-      <div class="time" id="stagingTimeAutoMall">Loading...</div>
+      <span class="location">AutoMall:</span>
+      <span class="time" id="stagingTimeAutoMall">Loading...</span>
     </div>
     
     <div class="staging-container">
-      <div class="location">Mission:</div>
-      <div class="time" id="stagingTimeMission">Loading...</div>
+      <span class="location">Mission:</span>
+      <span class="time" id="stagingTimeMission">Loading...</span>
     </div>
   </div>
 </body>
