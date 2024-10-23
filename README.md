@@ -14,3 +14,15 @@ Auto refresh set to long for now
       // URLs to fetch staging times for AutoMall (A1) and Mission (B1)
       var urlAutoMall = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${automallTime}?key=${apiKey}`;
       var urlMission = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${missionTime}?key=${apiKey}`;
+
+
+= Embeded Twich in Google Site Original =
+<div style="text-align: center;">
+    <iframe src="https://player.twitch.tv/?channel=rinsingstars&parent=sites.google.com&parent=play.google.com"
+            height="1920"
+            width="100%"
+            frameborder="0"
+            scrolling="no"
+            allowfullscreen="true">
+    </iframe>
+</div>
