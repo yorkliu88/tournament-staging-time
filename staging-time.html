@@ -30,7 +30,7 @@
 
     .last-updated {
       margin-top: 10px; /* Space above the Last Updated text */
-      font-size: medium; /* Make the Last Updated time smaller than staging time */
+      font-size: medium; /* Make the Last Updated time slightly smaller */
       color: gray;
     }
   </style>
@@ -96,19 +96,14 @@
       const currentTotalMinutes = currentHours * 60 + currentMinutes;
       const stagingTotalMinutes = stagingHours * 60 + stagingMinutes;
 
-      const thirtyMinutesInMs = 30; // 30 minutes
-
       const timeDifference = stagingTotalMinutes - currentTotalMinutes;
 
       if (timeDifference < 0) {
         // Delay: current time is after staging time
         document.getElementById(elementId).style.color = 'red';
-      } else if (timeDifference <= thirtyMinutesInMs) {
-        // Current time is within 30 minutes before staging time
-        document.getElementById(elementId).style.color = 'black';
       } else {
-        // Current time is more than 30 minutes before staging time
-        document.getElementById(elementId).style.color = 'green';
+        // On or before staging time
+        document.getElementById(elementId).style.color = 'black';
       }
     }
 
