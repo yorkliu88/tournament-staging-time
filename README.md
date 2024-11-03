@@ -1,7 +1,10 @@
 # tournament-staging-time
 https://yorkliu88.github.io/tournament-staging-time/staging-time.html
 
-If the current time pass the staging time then red. Curent time is within 30min before staging time then black. Current time is more than 30min before staging time then green.
+Color Logic:
+Red if the current time is after the staging time.
+Black if the current time is on or before the staging time.
+
 Comparison ignore the date, only time of the day
 
 Auto refresh set to long for now
