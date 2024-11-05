@@ -36,82 +36,94 @@
   </style>
   <script>
     function loadStagingTimes() {
-      var spreadsheetId = '1PHXNh74wemifZlv91l9hOZ-1-WTtrcp7gI8_-JR872c';  // Your Google Sheet ID
-      var apiKey = 'AIzaSyAwq2XmrASVwh8Eq6D7LAgunSBAST6Gup4';             // Your Google API Key
+      const spreadsheetId = '1PHXNh74wemifZlv91l9hOZ-1-WTtrcp7gI8_-JR872c';  // Your Google Sheet ID
+      const apiKey = 'AIzaSyAwq2XmrASVwh8Eq6D7LAgunSBAST6Gup4';             // Your Google API Key
 
-      // URLs to fetch staging times for AutoMall (B1) and Mission (B2)
-      var urlAutoMall = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!B1?key=${apiKey}`;
-      var urlMission = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!B2?key=${apiKey}`;
+      // URLs to fetch hours and minutes separately for AutoMall and Mission
+      const urlAutoMallHour = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!B2?key=${apiKey}`;
+      const urlAutoMallMinute = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!C2?key=${apiKey}`;
+      const urlMissionHour = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!B3?key=${apiKey}`;
+      const urlMissionMinute = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!C3?key=${apiKey}`;
 
-      // Fetch staging time for AutoMall (B1)
-      fetch(urlAutoMall)
-        .then(response => response.json())
-        .then(data => {
-          const stagingTime = new Date(`1970-01-01T${data.values[0][0]}:00`);
+      // Fetch staging time for AutoMall
+      Promise.all([fetch(urlAutoMallHour), fetch(urlAutoMallMinute)])
+        .then(responses => Promise.all(responses.map(response => response.json())))
+        .then(([hourData, minuteData]) => {
+          const hour = parseInt(hourData.values[0][0], 10);
+          const minute = parseInt(minuteData.values[0][0], 10);
+
+          // Validate hour and minute
+          if (isNaN(hour) || hour < 0 || hour > 23 || isNaN(minute) || minute < 0 || minute > 59) {
+            document.getElementById('stagingTimeAutoMall').textContent = 'Invalid time data';
+            document.getElementById('stagingTimeAutoMall').style.color = 'red';
+            return;
+          }
+
+          const stagingTime = new Date();
+          stagingTime.setHours(hour, minute, 0, 0);
           document.getElementById('stagingTimeAutoMall').textContent = stagingTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           updateTimeColor(stagingTime, 'stagingTimeAutoMall');
         })
         .catch(error => {
-          document.getElementById('stagingTimeAutoMall').textContent = 'Error';
+          document.getElementById('stagingTimeAutoMall').textContent = 'AutoMall data unavailable';
           console.error('Error fetching AutoMall data:', error);
         });
 
-      // Fetch staging time for Mission (B2)
-      fetch(urlMission)
-        .then(response => response.json())
-        .then(data => {
-          const stagingTime = new Date(`1970-01-01T${data.values[0][0]}:00`);
+      // Fetch staging time for Mission
+      Promise.all([fetch(urlMissionHour), fetch(urlMissionMinute)])
+        .then(responses => Promise.all(responses.map(response => response.json())))
+        .then(([hourData, minuteData]) => {
+          const hour = parseInt(hourData.values[0][0], 10);
+          const minute = parseInt(minuteData.values[0][0], 10);
+
+          // Validate hour and minute
+          if (isNaN(hour) || hour < 0 || hour > 23 || isNaN(minute) || minute < 0 || minute > 59) {
+            document.getElementById('stagingTimeMission').textContent = 'Invalid time data';
+            document.getElementById('stagingTimeMission').style.color = 'red';
+            return;
+          }
+
+          const stagingTime = new Date();
+          stagingTime.setHours(hour, minute, 0, 0);
           document.getElementById('stagingTimeMission').textContent = stagingTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           updateTimeColor(stagingTime, 'stagingTimeMission');
         })
         .catch(error => {
-          document.getElementById('stagingTimeMission').textContent = 'Error';
+          document.getElementById('stagingTimeMission').textContent = 'Mission data unavailable';
           console.error('Error fetching Mission data:', error);
         });
 
       // Fetch last modified time of the Google Sheet
-      var urlModifiedTime = `https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=modifiedTime&key=${apiKey}`;
+      const urlModifiedTime = `https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=modifiedTime&key=${apiKey}`;
       fetch(urlModifiedTime)
         .then(response => response.json())
         .then(data => {
-          var lastModified = new Date(data.modifiedTime);
+          const lastModified = new Date(data.modifiedTime);
           document.getElementById('lastUpdatedTime').textContent = 'Last Updated: ' + lastModified.toLocaleString();
         })
         .catch(error => {
-          document.getElementById('lastUpdatedTime').textContent = 'Error';
+          document.getElementById('lastUpdatedTime').textContent = 'Update time unavailable';
           console.error('Error fetching last updated time:', error);
         });
     }
 
     function updateTimeColor(stagingTime, elementId) {
       const currentTime = new Date();
-      const currentHours = currentTime.getHours();
-      const currentMinutes = currentTime.getMinutes();
-
-      // Get the staging time hours and minutes
-      const stagingHours = stagingTime.getHours();
-      const stagingMinutes = stagingTime.getMinutes();
-
-      // Calculate time differences in minutes
-      const currentTotalMinutes = currentHours * 60 + currentMinutes;
-      const stagingTotalMinutes = stagingHours * 60 + stagingMinutes;
-
+      const currentTotalMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+      const stagingTotalMinutes = stagingTime.getHours() * 60 + stagingTime.getMinutes();
       const timeDifference = stagingTotalMinutes - currentTotalMinutes;
 
-      if (timeDifference < 0) {
-        // Delay: current time is after staging time
-        document.getElementById(elementId).style.color = 'red';
-      } else {
-        // On or before staging time
-        document.getElementById(elementId).style.color = 'black';
-      }
+      // Delay: color red if the current time is after the staging time
+      document.getElementById(elementId).style.color = timeDifference < 0 ? 'red' : 'black';
     }
 
-    // Automatically refresh data every 30 seconds
-    setInterval(loadStagingTimes, 30000);  // 30,000 milliseconds = 30 seconds
+    document.addEventListener('DOMContentLoaded', () => {
+      loadStagingTimes();  // Initial load
+      setInterval(loadStagingTimes, 60000);  // Refresh every 60 seconds
+    });
   </script>
 </head>
-<body onload="loadStagingTimes()">
+<body>
   <div>
     <div class="staging-container">
       <span class="location">AutoMall:</span>
