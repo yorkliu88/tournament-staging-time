@@ -13,6 +13,7 @@
     
     .staging-container {
       display: flex;
+      flex-direction: column; /* Arrange items in a column for vertical stacking */
       justify-content: center;
       align-items: center;
       margin-bottom: 5px; /* Space between lines */
@@ -21,16 +22,12 @@
 
     .location {
       font-weight: bold;
-      margin-right: 5px; /* Space between location and time */
+      margin-bottom: 5px; /* Space between location and time */
     }
     
-    .time {
-      margin-left: 5px; /* Space between location and time */
-    }
-
     .last-updated {
       margin-top: 10px; /* Space above the Last Updated text */
-      font-size: medium; /* Make the Last Updated time slightly smaller */
+      font-size: large; /* Make the Last Updated time slightly smaller */
       color: gray;
     }
   </style>
@@ -100,7 +97,7 @@
 <body>
   <div>
     <div class="staging-container">
-      <span class="location">Mission:</span>
+      <span class="location">Mission</span>
       <span class="time" id="stagingTimeMission">Loading...</span>
     </div>
 
