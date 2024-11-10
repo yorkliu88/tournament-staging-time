@@ -17,7 +17,7 @@
       justify-content: center;
       align-items: center;
       margin-bottom: 5px; /* Space between lines */
-      font-size: 240px; /* Larger custom font size */
+      font-size: 240px; /* Set font size to 240px */
     }
 
     .location {
@@ -33,49 +33,27 @@
   </style>
   <script>
     function loadMissionStagingTime() {
-      const spreadsheetId = '1PHXNh74wemifZlv91l9hOZ-1-WTtrcp7gI8_-JR872c';  // Your Google Sheet ID
-      const apiKey = 'AIzaSyAwq2XmrASVwh8Eq6D7LAgunSBAST6Gup4';             // Your Google API Key
+      // Manually enter the hour and minute for Mission staging time
+      const hour = 16; // Set the hour (0-23)
+      const minute = 55; // Set the minute (0-59)
 
-      // URLs to fetch hour and minute for Mission
-      const urlMissionHour = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!B3?key=${apiKey}`;
-      const urlMissionMinute = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!C3?key=${apiKey}`;
+      // Validate hour and minute
+      if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        document.getElementById('stagingTimeMission').textContent = 'Invalid time data';
+        document.getElementById('stagingTimeMission').style.color = 'red';
+        return;
+      }
 
-      // Fetch staging time for Mission
-      Promise.all([fetch(urlMissionHour), fetch(urlMissionMinute)])
-        .then(responses => Promise.all(responses.map(response => response.json())))
-        .then(([hourData, minuteData]) => {
-          const hour = parseInt(hourData.values[0][0], 10);
-          const minute = parseInt(minuteData.values[0][0], 10);
+      // Set and display staging time
+      const stagingTime = new Date();
+      stagingTime.setHours(hour, minute, 0, 0);
+      const formattedTime = stagingTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      document.getElementById('stagingTimeMission').textContent = formattedTime;
+      updateTimeColor(stagingTime, 'stagingTimeMission');
 
-          // Validate hour and minute
-          if (isNaN(hour) || hour < 0 || hour > 23 || isNaN(minute) || minute < 0 || minute > 59) {
-            document.getElementById('stagingTimeMission').textContent = 'Invalid time data';
-            document.getElementById('stagingTimeMission').style.color = 'red';
-            return;
-          }
-
-          const stagingTime = new Date();
-          stagingTime.setHours(hour, minute, 0, 0);
-          document.getElementById('stagingTimeMission').textContent = stagingTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          updateTimeColor(stagingTime, 'stagingTimeMission');
-        })
-        .catch(error => {
-          document.getElementById('stagingTimeMission').textContent = 'Mission data unavailable';
-          console.error('Error fetching Mission data:', error);
-        });
-
-      // Fetch last modified time of the Google Sheet
-      const urlModifiedTime = `https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=modifiedTime&key=${apiKey}`;
-      fetch(urlModifiedTime)
-        .then(response => response.json())
-        .then(data => {
-          const lastModified = new Date(data.modifiedTime);
-          document.getElementById('lastUpdatedTime').textContent = 'Last Updated: ' + lastModified.toLocaleString();
-        })
-        .catch(error => {
-          document.getElementById('lastUpdatedTime').textContent = 'Update time unavailable';
-          console.error('Error fetching last updated time:', error);
-        });
+      // Update last modified time to the current time
+      const lastModified = new Date();
+      document.getElementById('lastUpdatedTime').textContent = 'Last Updated: ' + lastModified.toLocaleString();
     }
 
     function updateTimeColor(stagingTime, elementId) {
@@ -90,7 +68,7 @@
 
     document.addEventListener('DOMContentLoaded', () => {
       loadMissionStagingTime();  // Initial load
-      setInterval(loadMissionStagingTime, 60000);  // Refresh every 60 seconds
+      setInterval(loadMissionStagingTime, 30000);  // Refresh every 30 seconds
     });
   </script>
 </head>
