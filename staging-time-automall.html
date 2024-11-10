@@ -34,8 +34,8 @@
   <script>
     function loadAutoMallStagingTime() {
       // Manually enter the hour and minute for AutoMall staging time
-      const hour = 17; // Set the hour (0-23)
-      const minute = 00; // Set the minute (0-59)
+      const hour = 14; // Set the hour (0-23)
+      const minute = 30; // Set the minute (0-59)
 
       // Validate hour and minute
       if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
@@ -44,9 +44,11 @@
         return;
       }
 
+      // Set and display staging time
       const stagingTime = new Date();
       stagingTime.setHours(hour, minute, 0, 0);
-      document.getElementById('stagingTimeAutoMall').textContent = stagingTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const formattedTime = stagingTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      document.getElementById('stagingTimeAutoMall').textContent = formattedTime;
       updateTimeColor(stagingTime, 'stagingTimeAutoMall');
 
       // Update last modified time to the current time
@@ -66,4 +68,18 @@
 
     document.addEventListener('DOMContentLoaded', () => {
       loadAutoMallStagingTime();  // Initial load
-      setInterval(loadAutoMallStagingTime, 30000)
+      setInterval(loadAutoMallStagingTime, 30000);  // Refresh every 30 seconds
+    });
+  </script>
+</head>
+<body>
+  <div>
+    <div class="staging-container">
+      <span class="location">AutoMall</span>
+      <span class="time" id="stagingTimeAutoMall">Loading...</span>
+    </div>
+
+    <div class="last-updated" id="lastUpdatedTime">Loading...</div>
+  </div>
+</body>
+</html>
