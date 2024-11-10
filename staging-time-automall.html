@@ -33,27 +33,49 @@
   </style>
   <script>
     function loadAutoMallStagingTime() {
-      // Manually enter the hour and minute for AutoMall staging time
-      const hour = 17; // Set the hour (0-23)
-      const minute = 30; // Set the minute (0-59)
+      const spreadsheetId = '1PHXNh74wemifZlv91l9hOZ-1-WTtrcp7gI8_-JR872c';  // Your Google Sheet ID
+      const apiKey = 'AIzaSyAwq2XmrASVwh8Eq6D7LAgunSBAST6Gup4';             // Your Google API Key
 
-      // Validate hour and minute
-      if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-        document.getElementById('stagingTimeAutoMall').textContent = 'Invalid time data';
-        document.getElementById('stagingTimeAutoMall').style.color = 'red';
-        return;
-      }
+      // URLs to fetch hour and minute for AutoMall
+      const urlAutoMallHour = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!B2?key=${apiKey}`;
+      const urlAutoMallMinute = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!C2?key=${apiKey}`;
 
-      // Set and display staging time
-      const stagingTime = new Date();
-      stagingTime.setHours(hour, minute, 0, 0);
-      const formattedTime = stagingTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      document.getElementById('stagingTimeAutoMall').textContent = formattedTime;
-      updateTimeColor(stagingTime, 'stagingTimeAutoMall');
+      // Fetch staging time for AutoMall
+      Promise.all([fetch(urlAutoMallHour), fetch(urlAutoMallMinute)])
+        .then(responses => Promise.all(responses.map(response => response.json())))
+        .then(([hourData, minuteData]) => {
+          const hour = parseInt(hourData.values[0][0], 10);
+          const minute = parseInt(minuteData.values[0][0], 10);
 
-      // Update last modified time to the current time
-      const lastModified = new Date();
-      document.getElementById('lastUpdatedTime').textContent = 'Last Updated: ' + lastModified.toLocaleString();
+          // Validate hour and minute
+          if (isNaN(hour) || hour < 0 || hour > 23 || isNaN(minute) || minute < 0 || minute > 59) {
+            document.getElementById('stagingTimeAutoMall').textContent = 'Invalid time data';
+            document.getElementById('stagingTimeAutoMall').style.color = 'red';
+            return;
+          }
+
+          const stagingTime = new Date();
+          stagingTime.setHours(hour, minute, 0, 0);
+          document.getElementById('stagingTimeAutoMall').textContent = stagingTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          updateTimeColor(stagingTime, 'stagingTimeAutoMall');
+        })
+        .catch(error => {
+          document.getElementById('stagingTimeAutoMall').textContent = 'AutoMall data unavailable';
+          console.error('Error fetching AutoMall data:', error);
+        });
+
+      // Fetch last modified time of the Google Sheet
+      const urlModifiedTime = `https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=modifiedTime&key=${apiKey}`;
+      fetch(urlModifiedTime)
+        .then(response => response.json())
+        .then(data => {
+          const lastModified = new Date(data.modifiedTime);
+          document.getElementById('lastUpdatedTime').textContent = 'Last Updated: ' + lastModified.toLocaleString();
+        })
+        .catch(error => {
+          document.getElementById('lastUpdatedTime').textContent = 'Update time unavailable';
+          console.error('Error fetching last updated time:', error);
+        });
     }
 
     function updateTimeColor(stagingTime, elementId) {
