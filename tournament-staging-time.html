@@ -11,7 +11,7 @@
       font-family: Arial, sans-serif;
       text-align: center; /* Center the text in the container */
     }
-    
+
     .staging-container {
       display: flex;
       flex-direction: column; /* Arrange items in a column for vertical stacking */
@@ -23,8 +23,25 @@
 
     .announcement {
       margin-top: 10px;
-      font-size: clamp(20px, 8vw, 40px); /* Same size as staging time */
+      font-size: clamp(20px, 4vw, 40px); /* Announcement font size half of staging time */
       color: #333;
+      display: inline-block;
+      white-space: nowrap; /* Ensure the text doesn't break into multiple lines */
+      overflow: hidden; /* Hide the text outside the container */
+      max-width: 100%; /* Allow the text to stretch to container width */
+    }
+
+    .announcement-scrolling {
+      animation: scrollText 10s linear infinite; /* Scroll the text in 10 seconds */
+    }
+
+    @keyframes scrollText {
+      from {
+        transform: translateX(100%); /* Start the animation from the right */
+      }
+      to {
+        transform: translateX(-100%); /* Move the text to the left */
+      }
     }
 
     .last-updated {
@@ -67,7 +84,15 @@
 
           // Display the announcement
           if (announcement) {
-            document.getElementById('announcement').textContent = announcement;
+            const announcementElement = document.getElementById('announcement');
+            announcementElement.textContent = announcement;
+
+            // Check if the announcement is longer than 20 characters
+            if (announcement.length > 20) {
+              announcementElement.classList.add('announcement-scrolling'); // Apply animation if long
+            } else {
+              announcementElement.classList.remove('announcement-scrolling'); // Remove animation if short
+            }
           } else {
             document.getElementById('announcement').textContent = 'No announcements at this time.';
           }
