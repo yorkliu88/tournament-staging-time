@@ -1,0 +1,101 @@
+<html>
+<head>
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh; /* Full viewport height */
+      margin: 0;
+      font-family: Arial, sans-serif;
+      text-align: center; /* Center the text in the container */
+    }
+    
+    .staging-container {
+      display: flex;
+      flex-direction: column; /* Arrange items in a column for vertical stacking */
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 5px; /* Space between lines */
+      font-size: 240px; /* Set font size to 240px */
+    }
+
+    .last-updated {
+      margin-top: 10px; /* Space above the Last Updated text */
+      font-size: large; /* Make the Last Updated time slightly smaller */
+      color: gray;
+    }
+  </style>
+  <script>
+    function loadStagingTime() {
+      const spreadsheetId = '19wBUcM_42af-Teq49H5K-zU1yJB7JVz9jPGbPU99Ukg';  // Your Google Sheet ID
+      const apiKey = 'AIzaSyAwq2XmrASVwh8Eq6D7LAgunSBAST6Gup4';             // Your Google API Key
+
+      // URLs to fetch hour and minute 
+      const urlHour = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A2?key=${apiKey}`;
+      const urlMinute = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!B2?key=${apiKey}`;
+
+      // Fetch staging time
+      Promise.all([fetch(urlHour), fetch(urlMinute)])
+        .then(responses => Promise.all(responses.map(response => response.json())))
+        .then(([hourData, minuteData]) => {
+          const hour = parseInt(hourData.values[0][0], 10);
+          const minute = parseInt(minuteData.values[0][0], 10);
+
+          // Validate hour and minute
+          if (isNaN(hour) || hour < 0 || hour > 23 || isNaN(minute) || minute < 0 || minute > 59) {
+            document.getElementById('stagingTime').textContent = 'Invalid time data';
+            document.getElementById('stagingTime').style.color = 'red';
+            return;
+          }
+
+          const stagingTime = new Date();
+          stagingTime.setHours(hour, minute, 0, 0);
+          document.getElementById('stagingTime').textContent = stagingTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          updateTimeColor(stagingTime, 'stagingTime');
+        })
+        .catch(error => {
+          document.getElementById('stagingTime').textContent = 'Data unavailable';
+          console.error('Error fetching data:', error);
+        });
+
+      // Fetch last modified time of the Google Sheet
+      const urlModifiedTime = `https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=modifiedTime&key=${apiKey}`;
+      fetch(urlModifiedTime)
+        .then(response => response.json())
+        .then(data => {
+          const lastModified = new Date(data.modifiedTime);
+          document.getElementById('lastUpdatedTime').textContent = 'Last Updated: ' + lastModified.toLocaleString();
+        })
+        .catch(error => {
+          document.getElementById('lastUpdatedTime').textContent = 'Update time unavailable';
+          console.error('Error fetching last updated time:', error);
+        });
+    }
+
+    function updateTimeColor(stagingTime, elementId) {
+      const currentTime = new Date();
+      const currentTotalMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+      const stagingTotalMinutes = stagingTime.getHours() * 60 + stagingTime.getMinutes();
+      const timeDifference = stagingTotalMinutes - currentTotalMinutes;
+
+      // Delay: color red if the current time is after the staging time
+      document.getElementById(elementId).style.color = timeDifference < 0 ? 'red' : 'black';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadStagingTime();  // Initial load
+      setInterval(loadStagingTime, 30000);  // Refresh every 30 seconds
+    });
+  </script>
+</head>
+<body>
+  <div>
+    <div class="staging-container">
+      <span class="time" id="stagingTime">Loading...</span>
+    </div>
+
+    <div class="last-updated" id="lastUpdatedTime">Loading...</div>
+  </div>
+</body>
+</html>
