@@ -1,5 +1,6 @@
 <html>
 <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body {
       display: flex;
@@ -17,12 +18,12 @@
       justify-content: center;
       align-items: center;
       margin-bottom: 5px; /* Space between lines */
-      font-size: 80px; /* Smaller font size for staging time */
+      font-size: clamp(40px, 8vw, 80px); /* Scalable font size for staging time */
     }
 
     .last-updated {
       margin-top: 10px; /* Space above the Last Updated text */
-      font-size: large; /* Make the Last Updated time slightly smaller */
+      font-size: 20px; /* Smaller fixed size for the Last Updated time */
       color: gray;
     }
   </style>
