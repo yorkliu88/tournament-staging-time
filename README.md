@@ -11,7 +11,7 @@ Auto refresh set to long for now
 
 In GitHub Setting Danger Zone make the project private. After making public, in the Setting Page need to make Root path visable
 
-In the Google API, delete the website restriction http://www.risingstarsinfinite.com
+In the Google API, delete the website restriction http://www.risingstarsinfinite.com, or make it no restrictions
 
       var spreadsheetId = '1PHXNh74wemifZlv91l9hOZ-1-WTtrcp7gI8_-JR872c';  // Your Google Sheet ID
       var automallTime = 'Sheet1!B1';  // Specify the range (e.g., A1)
