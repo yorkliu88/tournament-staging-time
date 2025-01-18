@@ -21,6 +21,12 @@
       font-size: clamp(40px, 8vw, 80px); /* Scalable font size for staging time */
     }
 
+    .announcement {
+      margin-top: 10px;
+      font-size: clamp(40px, 8vw, 80px); /* Same size as staging time */
+      color: #333;
+    }
+
     .last-updated {
       margin-top: 10px; /* Space above the Last Updated text */
       font-size: 5px; /* Set font size to 5px */
@@ -34,16 +40,18 @@
       const spreadsheetId = '19wBUcM_42af-Teq49H5K-zU1yJB7JVz9jPGbPU99Ukg';  // Your Google Sheet ID
       const apiKey = 'AIzaSyAwq2XmrASVwh8Eq6D7LAgunSBAST6Gup4';             // Your Google API Key
 
-      // URLs to fetch hour and minute 
+      // URLs to fetch hour, minute, and announcement 
       const urlHour = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A2?key=${apiKey}`;
       const urlMinute = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!B2?key=${apiKey}`;
+      const urlAnnouncement = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A4?key=${apiKey}`;
 
-      // Fetch staging time
-      Promise.all([fetch(urlHour), fetch(urlMinute)])
+      // Fetch staging time and announcement
+      Promise.all([fetch(urlHour), fetch(urlMinute), fetch(urlAnnouncement)])
         .then(responses => Promise.all(responses.map(response => response.json())))
-        .then(([hourData, minuteData]) => {
+        .then(([hourData, minuteData, announcementData]) => {
           const hour = parseInt(hourData.values[0][0], 10);
           const minute = parseInt(minuteData.values[0][0], 10);
+          const announcement = announcementData.values[0][0];
 
           // Validate hour and minute
           if (isNaN(hour) || hour < 0 || hour > 23 || isNaN(minute) || minute < 0 || minute > 59) {
@@ -56,6 +64,13 @@
           stagingTime.setHours(hour, minute, 0, 0);
           document.getElementById('stagingTime').textContent = stagingTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           updateTimeColor(stagingTime, 'stagingTime');
+
+          // Display the announcement
+          if (announcement) {
+            document.getElementById('announcement').textContent = announcement;
+          } else {
+            document.getElementById('announcement').textContent = 'No announcements at this time.';
+          }
         })
         .catch(error => {
           document.getElementById('stagingTime').textContent = 'Data unavailable';
@@ -97,6 +112,8 @@
     <div class="staging-container">
       <span class="time" id="stagingTime">Loading...</span>
     </div>
+
+    <div class="announcement" id="announcement">Loading announcement...</div>
 
     <div class="last-updated" id="lastUpdatedTime">Loading...</div>
   </div>
