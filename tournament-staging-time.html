@@ -21,14 +21,17 @@
       font-size: clamp(40px, 8vw, 80px); /* Scalable font size for staging time */
     }
 
-    .announcement {
+    .announcement-container {
       margin-top: 10px;
+      width: 90%; /* Container width to restrict overflow */
+      overflow: hidden; /* Hide the text that overflows */
+    }
+
+    .announcement {
       font-size: clamp(20px, 4vw, 40px); /* Announcement font size half of staging time */
       color: #333;
       display: inline-block;
-      white-space: nowrap; /* Ensure the text doesn't break into multiple lines */
-      overflow: hidden; /* Hide the text outside the container */
-      max-width: 100%; /* Allow the text to stretch to container width */
+      white-space: nowrap; /* Prevent line breaks */
     }
 
     .announcement-scrolling {
@@ -89,12 +92,13 @@
 
             // Check if the announcement is longer than 20 characters
             if (announcement.length > 20) {
-              announcementElement.classList.add('announcement-scrolling'); // Apply animation if long
+              document.getElementById('announcementContainer').classList.add('announcement-scrolling'); // Apply animation if long
             } else {
-              announcementElement.classList.remove('announcement-scrolling'); // Remove animation if short
+              document.getElementById('announcementContainer').classList.remove('announcement-scrolling'); // Remove animation if short
             }
           } else {
             document.getElementById('announcement').textContent = 'No announcements at this time.';
+            document.getElementById('announcementContainer').classList.remove('announcement-scrolling');
           }
         })
         .catch(error => {
@@ -138,7 +142,9 @@
       <span class="time" id="stagingTime">Loading...</span>
     </div>
 
-    <div class="announcement" id="announcement">Loading announcement...</div>
+    <div class="announcement-container" id="announcementContainer">
+      <span class="announcement" id="announcement">Loading announcement...</span>
+    </div>
 
     <div class="last-updated" id="lastUpdatedTime">Loading...</div>
   </div>
