@@ -16,21 +16,17 @@
   .card .pad { padding:16px 18px; }
   .title { font-size:22px; font-weight:600; margin:4px 0 12px; }
   label { font-size:13px; font-weight:600; color:var(--muted); display:block; margin-bottom:6px; }
-  input[type=text], input[type=number] {
-    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font:inherit; outline:none;
-  }
+  input[type=text], input[type=number] { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font:inherit; outline:none; }
   .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--line); background:#111; color:#fff; cursor:pointer; font-weight:600; }
   .btn.secondary { background:#f5f5f5; color:#111; }
   .flex { display:flex; gap:10px; align-items:center; }
   .muted { color:var(--muted); font-size:13px; }
-  .pill { display:inline-block; padding:4px 10px; border-radius:999px; background:#eef7ff; color:#1b5ea8; font-size:12px; border:1px solid #d6e8ff;}
   .ok { color:var(--ok); }
   .warn { color:var(--warn); }
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th, td { padding:10px; text-align:left; border-top:1px solid var(--line); }
   thead th { background:#f7f7f7; font-size:13px; }
   .h1 { font-size:26px; font-weight:700; margin:0 0 10px; }
-  .right { text-align:right; }
   .grid3 { display:grid; gap:10px; grid-template-columns: 1fr 1fr 1fr; }
 </style>
 
@@ -67,7 +63,7 @@
             <button class="btn" id="fetchStagingBtn">Fetch</button>
           </div>
           <div class="muted" style="margin-top:6px;">
-            Uses last row / first time-like value (e.g., <em>Sun 10/26/2025 1:30 PM</em> or ISO).
+            Reads Hour/Minute from <strong>A2</strong>/<strong>B2</strong> on your published Sheet and builds today's time in the chosen timezone.
           </div>
 
           <div id="stagingStatus" style="margin-top:10px; font-weight:700;" class="ok">
@@ -95,7 +91,7 @@
       <div class="card"><div class="pad">
         <div class="title">2) Current Staging Time</div>
         <div style="font-size:22px; font-weight:700;" id="stagingTimeBig">—</div>
-        <div class="muted" id="stagingSrc">Source: —</div>
+        <div class="muted" id="stagingSrc">Source: A2/B2</div>
       </div></div>
 
       <div class="card"><div class="pad">
@@ -172,7 +168,7 @@
     if (v == null) return true;
     const s = String(v).trim();
     if (!s) return true;
-    return /^0+:?0*:?0*(\\.0+)?$/.test(s);
+    return /^0+:?0*:?0*(\.0+)?$/.test(s);
   }
   function parseDateAny(s){
     if (!s) return null;
@@ -191,7 +187,6 @@
     }
     return null;
   }
-
   function uniqueBy(arr, getKey){
     const seen = new Set(); const out = [];
     for (const it of arr){
@@ -201,50 +196,62 @@
     return out;
   }
 
-  // Fetchers
+  // Fetch helpers
   async function fetchText(url){
     const r = await fetch(url, { cache: "no-store" });
     if (!r.ok) throw new Error("Fetch failed " + r.status);
     return await r.text();
   }
 
+  // NEW: Fetch staging cutoff from A2/B2 (Hour/Minute)
   async function fetchStaging(){
     const url = stagingUrlEl.value.trim();
     if (!url) return;
     try {
       stagingStatusEl.textContent = "Fetching staging time…";
       const text = await fetchText(url);
-      const parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
-      let dt = null;
+
+      // Try header:true first (Hour,Minute in row 1 as A2/B2 values)
+      let hour = null, minute = null;
+      let parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
       if (parsed.data && parsed.data.length){
-        const row = parsed.data[parsed.data.length - 1];
-        const keyed = {};
-        for (const [k,v] of Object.entries(row)) keyed[toKey(k)] = v;
-        for (const v of Object.values(keyed)){
-          const tryDt = parseDateAny(v);
-          if (tryDt?.isValid){ dt = tryDt; break; }
-        }
-      } else {
-        // maybe a single-cell CSV
+        const first = parsed.data[0];
+        // Identify hour/min keys by regex (Hour or H) and Minute (Min)
+        const hourKey = Object.keys(first).find(k => /^(hour|h)$/i.test(k)) || Object.keys(first)[0];
+        const minuteKey = Object.keys(first).find(k => /^(minute|min|m)$/i.test(k)) || Object.keys(first)[1];
+        hour = Number(first[hourKey]);
+        minute = Number(first[minuteKey]);
+      }
+
+      // Fallback: header:false, take second row (index 1) for A2/B2
+      if ((hour==null || Number.isNaN(hour) || minute==null || Number.isNaN(minute))){
         const p2 = Papa.parse(text, { header:false, skipEmptyLines:true });
-        const flat = (p2.data || []).flat();
-        for (const v of flat){
-          const tryDt = parseDateAny(v);
-          if (tryDt?.isValid){ dt = tryDt; break; }
+        const rows = p2.data || [];
+        // rows[0] is header (Hour,Minute), rows[1] should be A2/B2
+        if (rows.length >= 2){
+          const r = rows[1];
+          hour = Number(r[0]);
+          minute = Number(r[1]);
         }
       }
+
+      let dt = null;
+      if (!Number.isNaN(hour) && !Number.isNaN(minute) && hour!=null && minute!=null){
+        dt = DateTime.now().setZone(zone).set({ hour, minute, second:0, millisecond:0 });
+      }
+
       if (dt){
         stagingCutoff = dt;
-        stagingStatusEl.innerHTML = `<span class="ok">Loaded.</span>`;
+        stagingStatusEl.innerHTML = `<span class="ok">Loaded from A2/B2 (${dt.toFormat("t")}).</span>`;
         stagingTimeBigEl.textContent = dt.toFormat("ccc, LLL d, t") + " (" + zone + ")";
-        stagingSrcEl.textContent = "Source: CSV";
+        stagingSrcEl.textContent = "Source: Hour/Minute cells (A2,B2)";
       } else {
         stagingCutoff = null;
-        stagingStatusEl.innerHTML = `<span class="warn">Could not parse a time from the CSV.</span>`;
+        stagingStatusEl.innerHTML = `<span class="warn">Could not read Hour/Minute from A2/B2.</span>`;
         stagingTimeBigEl.textContent = "—";
         stagingSrcEl.textContent = "Source: —";
       }
-      // recompute players if matches already loaded
+
       computePlayers();
     } catch (e){
       stagingCutoff = null;
@@ -304,11 +311,8 @@
       const hasCourt = !!m.court;
       const hasScore = !!m.score;
       const startZero = (m.startStr==null) || looksZero(m.startStr);
-      // A) finished -> skip tagging as playing
-      if (m.finishStr && !looksZero(m.finishStr)) continue;
-      // B) started and no score -> playing
-      if (!startZero){ if (!hasScore) playingIds.add(m.match_id); continue; }
-      // C) no start recorded, but time passed and has court and no score -> likely playing
+      if (m.finishStr && !looksZero(m.finishStr)) continue; // finished
+      if (!startZero){ if (!hasScore) { playingIds.add(m.match_id); continue; } }
       if (m.time && m.time <= now.plus({ minutes: 5 }) && hasCourt && !hasScore){
         playingIds.add(m.match_id); continue;
       }
@@ -319,20 +323,19 @@
     if (stagingCutoff){
       for (const m of matchesRows){
         if (!m.time || m.time > stagingCutoff) continue;
-        if (m.score) continue; // completed
-        if (playingIds.has(m.match_id)) continue; // in play
+        if (m.score) continue;
+        if (playingIds.has(m.match_id)) continue;
         stageCandidates.push(m);
       }
     }
     diagCandidatesEl.textContent = stageCandidates.length;
 
-    // to per-player rows
     const players = [];
     for (const m of stageCandidates){
       players.push({ player:m.player_a, opponent:m.player_b, m });
       players.push({ player:m.player_b, opponent:m.player_a, m });
     }
-    // filter empties & those in playing matches
+
     const nowPlayingNames = new Set();
     for (const m of matchesRows){
       if (playingIds.has(m.match_id)){
@@ -342,7 +345,6 @@
     }
     const cleaned = players.filter(p => p.player && !nowPlayingNames.has(String(p.player).toLowerCase()));
 
-    // sort by earliest est time, unique by player
     cleaned.sort((a,b) => {
       const ta = a.m.time ? a.m.time.toMillis() : Number.MAX_SAFE_INTEGER;
       const tb = b.m.time ? b.m.time.toMillis() : Number.MAX_SAFE_INTEGER;
@@ -350,7 +352,6 @@
     });
     const unique = uniqueBy(cleaned, r => String(r.player).toLowerCase());
 
-    // paint table
     playersBodyEl.innerHTML = "";
     if (!unique.length){
       playersTableEl.style.display = "none";
@@ -387,7 +388,6 @@
     stopTimer();
     const sec = Math.max(5, Number(refreshSecEl.value || 60));
     timer = setInterval(() => {
-      // refresh staging and matches (if URL present)
       if (stagingUrlEl.value.trim()) fetchStaging();
       if (matchesUrlEl.value.trim()) fetchMatches();
     }, sec * 1000);
@@ -404,7 +404,6 @@
   });
   tzEl.addEventListener("change", () => {
     zone = tzEl.value;
-    // Re-render staging time in the new zone (if we have it)
     if (stagingCutoff){
       stagingTimeBigEl.textContent = stagingCutoff.setZone(zone).toFormat("ccc, LLL d, t") + " (" + zone + ")";
     }
@@ -413,12 +412,10 @@
 
   // Initial setup
   stagingUrlEl.value = defaultStagingUrl;
-  // First load immediately:
   (async () => {
     await fetchStaging();
     // If you also have matches URL ready, uncomment next line to fetch once at load:
     // await fetchMatches();
-    // Start auto tick
     startTimer();
   })();
 })();
