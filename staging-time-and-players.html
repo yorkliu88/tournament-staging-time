@@ -7,12 +7,12 @@
 
 <style>
   :root { --bg:#fafafa; --card:#fff; --ink:#111; --muted:#666; --ok:#0b7c3e; --warn:#c62828; --line:#eaeaea; }
-  body { margin:0; font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"; background:var(--bg); color:var(--ink); }
+  body { margin:0; font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; background:var(--bg); color:var(--ink); }
   .wrap { max-width:1100px; margin:0 auto; padding:24px; }
   .row { display:grid; gap:16px; grid-template-columns: 1fr; }
   @media(min-width: 860px){ .row{ grid-template-columns: 1fr 1fr; } }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-  .card .pad { padding:16px 18px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+  .pad { padding:16px 18px; }
   .title { font-size:22px; font-weight:600; margin:4px 0 12px; }
   .h1 { font-size:26px; font-weight:700; margin:0 0 10px; }
   label { font-size:13px; font-weight:600; color:var(--muted); display:block; margin-bottom:6px; }
@@ -29,7 +29,6 @@
   thead th { background:#f7f7f7; font-size:13px; }
 </style>
 
-<!-- Libraries -->
 <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -40,7 +39,7 @@
       <div class="muted" id="now"></div>
     </div>
 
-    <!-- Settings row -->
+    <!-- Settings -->
     <div class="card"><div class="pad">
       <div class="title">Auto-refresh Settings</div>
       <div class="flex" style="align-items:center; gap:12px;">
@@ -62,8 +61,9 @@
             <button class="btn" id="fetchMatchesBtn">Fetch</button>
           </div>
           <div class="muted" style="margin-top:6px;">
-            Expected headers: <code>ID</code>, <code>Time</code>, <code>Event</code>, <code>Round</code>, <code>Court</code>,
-            <code>Team 1</code>, <code>Team 2</code>, <code>Score</code>, <code>Start</code>, <code>Finish</code>.
+            Expected headers (case-insensitive ok): <code>ID</code>, <code>Time</code>, <code>Event</code>,
+            <code>Round</code>, <code>Court</code>, <code>Team 1</code>, <code>Team 2</code>, <code>Score</code>,
+            <code>Start</code>, <code>Finish</code>.
           </div>
         </div>
 
@@ -152,13 +152,12 @@
   let stagingCutoff = null;   // Luxon DateTime
   let matchesRows = [];
 
-  // Clock display
+  // Clock
   setInterval(() => {
     nowEl.textContent = "Local time: " + DateTime.now().setZone(zone).toFormat("ccc, LLL d, t") + " (" + zone + ")";
   }, 1000);
-
   function recordRefresh(){
-    lastRefreshEl.textContent = DateTime.now().setZone(zone).toFormat("ccc, LLL d yyyy t");
+    lastRefreshEl.textContent = DateTime.now().setZone(zone).toFormat("ccc LLL d yyyy t");
   }
 
   function toKey(s){
@@ -200,18 +199,18 @@
   async function fetchText(url){
     const r = await fetch(url, { cache: "no-store" });
     if (!r.ok) throw new Error("Fetch failed " + r.status);
-    return { text: await r.text(), headers: r.headers };
+    return await r.text();
   }
 
-  // Staging: read A2/B2 (Hour/Minute) and include Last-Modified header
+  // Staging: read A2/B2 (Hour/Minute)
   async function fetchStaging(){
     const url = stagingUrlEl.value.trim();
     if (!url) return;
     try {
       stagingTimeBigEl.textContent = "Fetching staging time…";
-      const { text, headers } = await fetchText(url);
+      const text = await fetchText(url);
 
-      // Try header:true (first row contains hour/min columns)
+      // header:true path (first row has hour/min columns)
       let hour = null, minute = null;
       let parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
       if (parsed.data && parsed.data.length){
@@ -221,7 +220,7 @@
         hour = Number(first[hourKey]);
         minute = Number(first[minuteKey]);
       }
-      // Fallback: header:false (row 2 = A2/B2)
+      // fallback: header:false (row 2 = A2/B2)
       if ((hour==null || Number.isNaN(hour) || minute==null || Number.isNaN(minute))){
         const p2 = Papa.parse(text, { header:false, skipEmptyLines:true });
         const rows = p2.data || [];
@@ -238,30 +237,23 @@
         return;
       }
 
-      const dt = DateTime.now().setZone(zone).set({ hour, minute, second:0, millisecond:0 });
+      stagingCutoff = DateTime.now().setZone(zone).set({ hour, minute, second:0, millisecond:0 });
+      stagingTimeBigEl.innerHTML = `Current Staging Time: ${stagingCutoff.toFormat("t")} (${zone})`;
 
-      // Last-Modified header -> format "Sun Nov 2 2025 7:48 PM"
-      let lastModStr = "unknown";
-      try {
-        const lastMod = headers.get("Last-Modified");
-        if (lastMod) {
-          lastModStr = DateTime.fromHTTP(lastMod).setZone(zone).toFormat("ccc LLL d yyyy t");
-        }
-      } catch(_) {}
-
-      stagingCutoff = dt;
-      stagingTimeBigEl.innerHTML = `Staging Time: ${dt.toFormat("t")} (Last Updated: ${lastModStr})`;
+      // If matches already loaded, recompute
+      computePlayers();
     } catch (e){
       stagingCutoff = null;
       stagingTimeBigEl.innerHTML = '<span class="warn">Fetch failed.</span>';
     }
   }
 
+  // Matches
   async function fetchMatches(){
     const url = matchesUrlEl.value.trim();
     if (!url) return;
     try {
-      const { text } = await fetchText(url);
+      const text = await fetchText(url);
       const out = Papa.parse(text, { header:true, skipEmptyLines:true });
       const rows = (out.data || []).map(r => {
         const obj = {}; for (const [k,v] of Object.entries(r)) obj[toKey(k)] = v;
@@ -278,8 +270,7 @@
 
         return {
           player_a, player_b,
-          timeStr: time,
-          time: parseDateAny(time),
+          timeStr: time, time: parseDateAny(time),
           startStr: start, finishStr: finish,
           score: String(score || "").trim(),
           court: String(court || "").trim(),
@@ -298,37 +289,40 @@
     }
   }
 
-  // Compute staging players
+  // Compute Players to Stage
   function computePlayers(){
     const now = DateTime.now().setZone(zone);
+
+    // Heuristic for "currently playing"
     const playingIds = new Set();
     for (const m of matchesRows){
       const hasCourt = !!m.court;
       const hasScore = !!m.score;
-      const startZero = (m.startStr==null) || looksZero(m.startStr);
-      if (m.finishStr && !looksZero(m.finishStr)) continue;
+      const startZero = (m.startStr==null) || /^0+:?0*:?0*(\.0+)?$/.test(String(m.startStr).trim());
+      if (m.finishStr && String(m.finishStr).trim() && !/^0+:?0*:?0*(\.0+)?$/.test(String(m.finishStr).trim())) continue; // finished
       if (!startZero){ if (!hasScore) { playingIds.add(m.match_id); continue; } }
       if (m.time && m.time <= now.plus({ minutes: 5 }) && hasCourt && !hasScore){ playingIds.add(m.match_id); continue; }
     }
     diagPlayingEl.textContent = playingIds.size;
 
+    // Stage candidates
     let stageCandidates = [];
     if (stagingCutoff){
       for (const m of matchesRows){
-        if (!m.time || m.time > stagingCutoff) continue;
-        if (m.score) continue;
-        if (playingIds.has(m.match_id)) continue;
+        if (!m.time || m.time > stagingCutoff) continue; // later than cutoff
+        if (m.score) continue;                            // already finished
+        if (playingIds.has(m.match_id)) continue;         // in play
         stageCandidates.push(m);
       }
     }
     diagCandidatesEl.textContent = stageCandidates.length;
 
+    // Expand to per-player rows, remove those already playing elsewhere
     const players = [];
     for (const m of stageCandidates){
       players.push({ player:m.player_a, opponent:m.player_b, m });
       players.push({ player:m.player_b, opponent:m.player_a, m });
     }
-
     const nowPlayingNames = new Set();
     for (const m of matchesRows){
       if (playingIds.has(m.match_id)){
@@ -338,6 +332,7 @@
     }
     const cleaned = players.filter(p => p.player && !nowPlayingNames.has(String(p.player).toLowerCase()));
 
+    // Sort by earliest estimated time, unique by player
     cleaned.sort((a,b) => {
       const ta = a.m.time ? a.m.time.toMillis() : Number.MAX_SAFE_INTEGER;
       const tb = b.m.time ? b.m.time.toMillis() : Number.MAX_SAFE_INTEGER;
@@ -345,6 +340,7 @@
     });
     const unique = uniqueBy(cleaned, r => String(r.player).toLowerCase());
 
+    // Render
     playersBodyEl.innerHTML = "";
     if (!unique.length){
       playersTableEl.style.display = "none";
@@ -399,18 +395,17 @@
   tzEl.addEventListener("change", () => {
     zone = tzEl.value;
     if (stagingCutoff){
-      stagingTimeBigEl.innerHTML =
-        `Staging Time: ${stagingCutoff.setZone(zone).toFormat("t")} (Last Updated: ${lastRefreshEl.textContent || "unknown"})`;
+      stagingTimeBigEl.innerHTML = `Current Staging Time: ${stagingCutoff.setZone(zone).toFormat("t")} (${zone})`;
     }
     computePlayers();
   });
 
-  // Initial setup
+  // Init
   stagingUrlEl.value = defaultStagingUrl;
   (async () => {
     await fetchStaging();
-    // If you also have a Matches CSV URL ready, uncomment to fetch on load:
-    // await fetchMatches();
+    // If you want to auto-load your matches URL by default, set it here:
+    // matchesUrlEl.value = "https://.../matches.csv"; await fetchMatches();
     recordRefresh();
     startTimer();
   })();
