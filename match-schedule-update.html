@@ -17,6 +17,7 @@
   table{width:100%;border-collapse:collapse;font-size:14px}
   th,td{padding:8px;border-top:1px solid #eee;text-align:left}
   thead th{background:#f7f7f7}
+  code.inline{background:#f6f6f6;padding:2px 6px;border-radius:6px;border:1px solid #eee}
 </style>
 <!-- SheetJS for XLSX parsing -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -25,12 +26,19 @@
 <div class="wrap">
   <h1 style="margin:0 0 12px">Match Schedule Update (Matches Only)</h1>
 
+  <!-- Endpoint (prefilled & read-only) -->
   <div class="card">
-    <div class="title">1) Google Apps Script Web App URL</div>
-    <div class="muted">Paste the Web App URL you deployed from Apps Script.</div>
-    <input id="endpoint" type="text" placeholder="https://script.google.com/macros/s/AKfycb.../exec" />
+    <div class="title">1) Apps Script Web App</div>
+    <div class="muted" style="margin-bottom:6px">
+      This endpoint receives the normalized rows and writes them to the <b>Matches</b> tab in your sheet
+      <span class="inline">staging-time-match-schedule-update</span>.
+    </div>
+    <input id="endpoint" type="text"
+      value="https://script.google.com/macros/s/AKfycbyGK-R4txGHYAZ8cenp7pXDZyzJjlf1uPXY4I0JJk381986X8jclaGUeUZ36a2i_vfe4w/exec"
+      readonly />
   </div>
 
+  <!-- XLSX upload -->
   <div class="card">
     <div class="title">2) Upload Tournament XLSX</div>
     <div class="muted">Drop your tournament export (.xlsx). We’ll parse & normalize columns, then upload to the <b>Matches</b> tab.</div>
@@ -41,9 +49,27 @@
     </div>
   </div>
 
+  <!-- FYI: Published CSV link for your public page -->
+  <div class="card">
+    <div class="title">Published Matches CSV (for your public page)</div>
+    <div class="muted" style="margin-bottom:8px">
+      This is the CSV your <b>staging-time-and-players.html</b> reads for matches:
+    </div>
+    <input type="text" readonly
+      value="https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv" />
+    <div class="muted" style="margin-top:8px">
+      <a target="_blank" href="https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv">
+        Open CSV</a>
+      &nbsp;•&nbsp;
+      <a target="_blank" href="https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pubhtml?gid=0&single=true">
+        Open HTML View</a>
+    </div>
+  </div>
+
+  <!-- Preview -->
   <div class="card">
     <div class="title">Preview (first 20 rows)</div>
-    <div class="muted">Normalized columns: ID, Time, Event, Round, Court, Team 1, Team 2, Score, Start, Finish</div>
+    <div class="muted">Normalized columns: <code class="inline">ID</code>, <code class="inline">Time</code>, <code class="inline">Event</code>, <code class="inline">Round</code>, <code class="inline">Court</code>, <code class="inline">Team 1</code>, <code class="inline">Team 2</code>, <code class="inline">Score</code>, <code class="inline">Start</code>, <code class="inline">Finish</code></div>
     <div style="overflow:auto">
       <table>
         <thead><tr id="thead"></tr></thead>
@@ -65,7 +91,7 @@
 
   function toKey(s){return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
 
-  // Map arbitrary tournament columns → stable schema the public page expects
+  // Map arbitrary tournament columns → stable schema expected by public page
   function normalizeSheet(jsonRows){
     const out=[];
     for(const r of jsonRows){
@@ -133,14 +159,10 @@
 
   sendBtn.addEventListener('click', async () => {
     const endpoint=(endpointEl.value||'').trim();
-    if(!endpoint){ alert('Please paste your Apps Script Web App URL.'); return; }
+    if(!endpoint){ alert('Missing Apps Script URL.'); return; }
     if(!normalizedRows.length){ alert('Please upload an XLSX first.'); return; }
 
-    const body = {
-      matches: normalizedRows,
-      overwrite: true
-      // No stagingHour / stagingMinute here (you manage staging separately)
-    };
+    const body = { matches: normalizedRows, overwrite: true };
 
     try{
       statusEl.textContent='Sending to Google Sheet…';
