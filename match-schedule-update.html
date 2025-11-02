@@ -3,15 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Match Schedule Update</title>
+<title>Match Schedule Update (Matches Only)</title>
 <style>
   body{margin:0;font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:#fafafa;color:#111}
   .wrap{max-width:900px;margin:0 auto;padding:24px}
   .card{background:#fff;border:1px solid #eaeaea;border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.04);padding:18px 20px;margin-bottom:18px}
   .title{font-weight:700;font-size:20px;margin-bottom:8px}
   .muted{color:#666;font-size:14px}
-  input[type=text],input[type=number]{width:100%;padding:10px 12px;border:1px solid #eaeaea;border-radius:10px;font:inherit}
-  .row{display:grid;gap:12px;grid-template-columns:1fr 1fr}
+  input[type=text]{width:100%;padding:10px 12px;border:1px solid #eaeaea;border-radius:10px;font:inherit}
   .btn{padding:10px 14px;border-radius:10px;border:1px solid #eaeaea;background:#111;color:#fff;font-weight:600;cursor:pointer}
   .ok{color:#0b7c3e}
   .warn{color:#c62828}
@@ -24,28 +23,18 @@
 </head>
 <body>
 <div class="wrap">
-  <h1 style="margin:0 0 12px">Match Schedule Update</h1>
+  <h1 style="margin:0 0 12px">Match Schedule Update (Matches Only)</h1>
 
   <div class="card">
     <div class="title">1) Google Apps Script Web App URL</div>
-    <div class="muted">Paste the Web App URL you deployed from Apps Script (step A).</div>
+    <div class="muted">Paste the Web App URL you deployed from Apps Script.</div>
     <input id="endpoint" type="text" placeholder="https://script.google.com/macros/s/AKfycb.../exec" />
   </div>
 
   <div class="card">
     <div class="title">2) Upload Tournament XLSX</div>
-    <div class="muted">Drop your tournament export (.xlsx). We’ll parse & normalize columns automatically.</div>
+    <div class="muted">Drop your tournament export (.xlsx). We’ll parse & normalize columns, then upload to the <b>Matches</b> tab.</div>
     <input id="xlsxInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-    <div style="margin-top:10px" class="row">
-      <div>
-        <label class="muted">Staging Hour (0–23)</label>
-        <input id="stagingHour" type="number" min="0" max="23" />
-      </div>
-      <div>
-        <label class="muted">Staging Minute (0–59)</label>
-        <input id="stagingMinute" type="number" min="0" max="59" />
-      </div>
-    </div>
     <div style="margin-top:10px">
       <button class="btn" id="sendBtn">Send to Google Sheet</button>
       <span id="status" style="margin-left:10px" class="muted">Idle</span>
@@ -68,8 +57,6 @@
 (function(){
   const endpointEl = document.getElementById('endpoint');
   const xlsxInput = document.getElementById('xlsxInput');
-  const stagingHourEl = document.getElementById('stagingHour');
-  const stagingMinuteEl = document.getElementById('stagingMinute');
   const sendBtn = document.getElementById('sendBtn');
   const statusEl = document.getElementById('status');
   const theadEl = document.getElementById('thead');
@@ -78,12 +65,13 @@
 
   function toKey(s){return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
 
-  // normalize to stable schema
+  // Map arbitrary tournament columns → stable schema the public page expects
   function normalizeSheet(jsonRows){
     const out=[];
     for(const r of jsonRows){
       const row={}; for(const [k,v] of Object.entries(r)) row[toKey(k)]=v;
-      const id=row.id||row.match_id||row.nr||'';
+
+      const id=row.id||row.match_id||row.nr||row.match||'';
       const time=row.time||row.estimated_start||row.est_start||row.start_time||'';
       const event=row.event||row.division||row.category||'';
       const round=row.round||row.stage||'';
@@ -93,12 +81,19 @@
       const score=row.score||row.result||'';
       const start=row.start||row.actual_start||'';
       const finish=row.finish||row.end||'';
-      if(team1||team2){
+
+      if (team1 || team2){
         out.push({
-          "ID":String(id||''),"Time":String(time||''),"Event":String(event||''),
-          "Round":String(round||''),"Court":String(court||''),
-          "Team 1":String(team1||''),"Team 2":String(team2||''),
-          "Score":String(score||''),"Start":String(start||''),"Finish":String(finish||'')
+          "ID":String(id||''),
+          "Time":String(time||''),
+          "Event":String(event||''),
+          "Round":String(round||''),
+          "Court":String(court||''),
+          "Team 1":String(team1||''),
+          "Team 2":String(team2||''),
+          "Score":String(score||''),
+          "Start":String(start||''),
+          "Finish":String(finish||'')
         });
       }
     }
@@ -118,41 +113,48 @@
   }
   function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');}
 
-  xlsxInput.addEventListener('change',async e=>{
-    const file=e.target.files?.[0]; if(!file)return;
+  xlsxInput.addEventListener('change', async (e) => {
+    const file=e.target.files?.[0]; if(!file) return;
     statusEl.textContent='Parsing XLSX…';
     const data=await file.arrayBuffer();
     const wb=XLSX.read(data,{type:'array'});
-    let firstJson=[];
+
+    // Pick first non-empty sheet
+    let rows=[];
     for(const name of wb.SheetNames){
       const ws=wb.Sheets[name];
       const json=XLSX.utils.sheet_to_json(ws,{defval:''});
-      if(json.length){firstJson=json;break;}
+      if(json.length){ rows=json; break; }
     }
-    normalizedRows=normalizeSheet(firstJson);
+    normalizedRows=normalizeSheet(rows);
     renderPreview(normalizedRows);
-    statusEl.innerHTML=`<span class=\"ok\">Parsed ${normalizedRows.length} rows.</span>`;
+    statusEl.innerHTML=`<span class="ok">Parsed ${normalizedRows.length} rows.</span>`;
   });
 
-  sendBtn.addEventListener('click',async()=>{
+  sendBtn.addEventListener('click', async () => {
     const endpoint=(endpointEl.value||'').trim();
-    if(!endpoint){alert('Please paste your Apps Script Web App URL.');return;}
-    if(!normalizedRows.length){alert('Please upload an XLSX first.');return;}
-    const hour=stagingHourEl.value===''?undefined:Number(stagingHourEl.value);
-    const minute=stagingMinuteEl.value===''?undefined:Number(stagingMinuteEl.value);
-    const body={
-      matches:normalizedRows,overwrite:true,
-      stagingHour:(typeof hour==='number'&&!isNaN(hour))?hour:undefined,
-      stagingMinute:(typeof minute==='number'&&!isNaN(minute))?minute:undefined
+    if(!endpoint){ alert('Please paste your Apps Script Web App URL.'); return; }
+    if(!normalizedRows.length){ alert('Please upload an XLSX first.'); return; }
+
+    const body = {
+      matches: normalizedRows,
+      overwrite: true
+      // No stagingHour / stagingMinute here (you manage staging separately)
     };
+
     try{
       statusEl.textContent='Sending to Google Sheet…';
-      const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),mode:'cors'});
+      const r=await fetch(endpoint,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(body),
+        mode:'cors'
+      });
       const j=await r.json();
-      if(!j.ok)throw new Error(j.error||'Unknown error');
-      statusEl.innerHTML=`<span class=\"ok\">Wrote ${j.rows} rows to Matches. Staging updated if provided.</span>`;
+      if(!j.ok) throw new Error(j.error||'Unknown error');
+      statusEl.innerHTML=`<span class="ok">Wrote ${j.rows} rows to Matches.</span>`;
     }catch(err){
-      statusEl.innerHTML=`<span class=\"warn\">Failed: ${String(err)}</span>`;
+      statusEl.innerHTML=`<span class="warn">Failed: ${String(err)}</span>`;
     }
   });
 })();
