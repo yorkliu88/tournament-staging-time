@@ -4,7 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Tournament Staging Time & Players</title>
-
 <style>
   :root { --bg:#fafafa; --card:#fff; --ink:#111; --muted:#666; --ok:#0b7c3e; --warn:#c62828; --line:#eaeaea; }
   body { margin:0; font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; background:var(--bg); color:var(--ink); }
@@ -39,7 +38,6 @@
       <div class="muted" id="now"></div>
     </div>
 
-    <!-- Settings -->
     <div class="card"><div class="pad">
       <div class="title">Auto-refresh Settings</div>
       <div class="flex" style="align-items:center; gap:12px;">
@@ -50,7 +48,6 @@
       </div>
     </div></div>
 
-    <!-- Data sources -->
     <div class="card" style="margin-top:16px;"><div class="pad">
       <div class="title">1) Data Sources</div>
       <div class="row">
@@ -60,11 +57,6 @@
             <input type="text" id="matchesUrl" placeholder="https://.../matches.csv" />
             <button class="btn" id="fetchMatchesBtn">Fetch</button>
           </div>
-          <div class="muted" style="margin-top:6px;">
-            Expected headers (case-insensitive ok): <code>ID</code>, <code>Time</code>, <code>Event</code>,
-            <code>Round</code>, <code>Court</code>, <code>Team 1</code>, <code>Team 2</code>, <code>Score</code>,
-            <code>Start</code>, <code>Finish</code>.
-          </div>
         </div>
 
         <div>
@@ -73,22 +65,15 @@
             <input type="text" id="stagingUrl" />
             <button class="btn" id="fetchStagingBtn">Fetch</button>
           </div>
-          <div class="muted" style="margin-top:6px;">
-            Builds today’s time in the selected timezone from Hour (0–23) and Minute (0–59).
-          </div>
         </div>
       </div>
     </div></div>
 
-    <!-- Staging time + diagnostics -->
     <div class="row" style="margin-top:16px;">
       <div class="card"><div class="pad">
         <div class="title">2) Current Staging Time</div>
         <div style="font-size:22px; font-weight:700; color:#0b7c3e;" id="stagingTimeBig">
           Fetching staging time…
-        </div>
-        <div class="muted">Timezone:
-          <input type="text" id="tz" value="America/Los_Angeles" style="width:220px; margin-left:8px;" />
         </div>
       </div></div>
 
@@ -101,7 +86,6 @@
       </div></div>
     </div>
 
-    <!-- Players table -->
     <div class="card" style="margin-top:16px;"><div class="pad">
       <div class="title">4) Players to Stage</div>
       <div class="muted" id="playersEmpty">Load Matches CSV to compute staging players.</div>
@@ -121,12 +105,8 @@
 <script>
 (function(){
   const { DateTime } = luxon;
+  const defaultStagingUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTCnxXDwQE5lgVWkm51FKG48ZPYtOYYQN4Zj-w1M1j6giv69A_CDSSIZQHTtk0ouVg06xH_uGHa-i5A/pub?gid=0&single=true&output=csv";
 
-  // Defaults
-  const defaultStagingUrl =
-    "https://docs.google.com/spreadsheets/d/e/2PACX-1vTCnxXDwQE5lgVWkm51FKG48ZPYtOYYQN4Zj-w1M1j6giv69A_CDSSIZQHTtk0ouVg06xH_uGHa-i5A/pub?gid=0&single=true&output=csv";
-
-  // Elements
   const nowEl = document.getElementById("now");
   const lastRefreshEl = document.getElementById("lastRefresh");
   const refreshSecEl = document.getElementById("refreshSec");
@@ -136,7 +116,6 @@
   const fetchMatchesBtn = document.getElementById("fetchMatchesBtn");
   const fetchStagingBtn = document.getElementById("fetchStagingBtn");
   const stagingTimeBigEl = document.getElementById("stagingTimeBig");
-  const tzEl = document.getElementById("tz");
   const diagMatchesEl = document.getElementById("diagMatches");
   const diagPlayingEl = document.getElementById("diagPlaying");
   const diagCandidatesEl = document.getElementById("diagCandidates");
@@ -145,14 +124,12 @@
   const playersTableEl = document.getElementById("playersTable");
   const playersBodyEl = document.getElementById("playersBody");
 
-  // State
   let auto = true;
   let timer = null;
-  let zone = tzEl.value;
-  let stagingCutoff = null;   // Luxon DateTime
+  let zone = "America/Los_Angeles";
+  let stagingCutoff = null;
   let matchesRows = [];
 
-  // Clock
   setInterval(() => {
     nowEl.textContent = "Local time: " + DateTime.now().setZone(zone).toFormat("ccc, LLL d, t") + " (" + zone + ")";
   }, 1000);
@@ -164,36 +141,18 @@
     if (!s) return "";
     return String(s).trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
   }
-  function looksZero(v){
-    if (v == null) return true;
-    const s = String(v).trim();
-    if (!s) return true;
-    return /^0+:?0*:?0*(\.0+)?$/.test(s);
-  }
+
   function parseDateAny(s){
     if (!s) return null;
     const str = String(s).trim();
     const d1 = Date.parse(str);
     if (!Number.isNaN(d1)) return DateTime.fromMillis(d1).setZone(zone);
-    const fmts = [
-      "EEE M/d/yyyy h:mm a", "EEE MM/dd/yyyy h:mm a",
-      "M/d/yyyy h:mm a", "MM/dd/yyyy h:mm a",
-      "yyyy-MM-dd'T'HH:mmZZ", "yyyy-MM-dd'T'HH:mm:ssZZ",
-      "yyyy-MM-dd HH:mm", "yyyy/MM/dd HH:mm"
-    ];
+    const fmts = ["EEE M/d/yyyy h:mm a","EEE MM/dd/yyyy h:mm a","M/d/yyyy h:mm a","MM/dd/yyyy h:mm a","yyyy-MM-dd'T'HH:mmZZ","yyyy-MM-dd'T'HH:mm:ssZZ","yyyy-MM-dd HH:mm","yyyy/MM/dd HH:mm"];
     for (const f of fmts){
       const dt = DateTime.fromFormat(str, f, { zone });
       if (dt.isValid) return dt;
     }
     return null;
-  }
-  function uniqueBy(arr, getKey){
-    const seen = new Set(); const out = [];
-    for (const it of arr){
-      const k = getKey(it);
-      if (!seen.has(k)){ seen.add(k); out.push(it); }
-    }
-    return out;
   }
 
   async function fetchText(url){
@@ -202,25 +161,21 @@
     return await r.text();
   }
 
-  // Staging: read A2/B2 (Hour/Minute)
   async function fetchStaging(){
     const url = stagingUrlEl.value.trim();
     if (!url) return;
     try {
       stagingTimeBigEl.textContent = "Fetching staging time…";
       const text = await fetchText(url);
-
-      // header:true path (first row has hour/min columns)
       let hour = null, minute = null;
       let parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
       if (parsed.data && parsed.data.length){
         const first = parsed.data[0];
-        const hourKey = Object.keys(first).find(k => /^(hour|h)$/i.test(k)) || Object.keys(first)[0];
-        const minuteKey = Object.keys(first).find(k => /^(minute|min|m)$/i.test(k)) || Object.keys(first)[1];
+        const hourKey = Object.keys(first).find(k => /hour/i.test(k)) || Object.keys(first)[0];
+        const minuteKey = Object.keys(first).find(k => /min/i.test(k)) || Object.keys(first)[1];
         hour = Number(first[hourKey]);
         minute = Number(first[minuteKey]);
       }
-      // fallback: header:false (row 2 = A2/B2)
       if ((hour==null || Number.isNaN(hour) || minute==null || Number.isNaN(minute))){
         const p2 = Papa.parse(text, { header:false, skipEmptyLines:true });
         const rows = p2.data || [];
@@ -230,17 +185,13 @@
           minute = Number(r[1]);
         }
       }
-
       if (Number.isNaN(hour) || Number.isNaN(minute) || hour==null || minute==null){
         stagingCutoff = null;
         stagingTimeBigEl.innerHTML = '<span class="warn">Could not read Hour/Minute from A2/B2.</span>';
         return;
       }
-
       stagingCutoff = DateTime.now().setZone(zone).set({ hour, minute, second:0, millisecond:0 });
-      stagingTimeBigEl.innerHTML = `Current Staging Time: ${stagingCutoff.toFormat("t")} (${zone})`;
-
-      // If matches already loaded, recompute
+      stagingTimeBigEl.innerHTML = `Current Staging Time: ${stagingCutoff.toFormat("t")}`;
       computePlayers();
     } catch (e){
       stagingCutoff = null;
@@ -248,7 +199,6 @@
     }
   }
 
-  // Matches
   async function fetchMatches(){
     const url = matchesUrlEl.value.trim();
     if (!url) return;
@@ -260,24 +210,12 @@
         const player_a = obj["team_1"] || obj["player_a"] || obj["player1"] || obj["team1"] || "";
         const player_b = obj["team_2"] || obj["player_b"] || obj["player2"] || obj["team2"] || "";
         const time = obj["time"] || obj["estimated_start"] || obj["est_start"] || "";
-        const start = obj["start"];
-        const finish = obj["finish"];
         const score = obj["score"] || "";
         const court = obj["court"] || "";
         const division = obj["event"] || obj["division"] || "";
         const round = obj["round"] || "";
         const match_id = obj["id"] || obj["match_id"] || obj["nr"] || "";
-
-        return {
-          player_a, player_b,
-          timeStr: time, time: parseDateAny(time),
-          startStr: start, finishStr: finish,
-          score: String(score || "").trim(),
-          court: String(court || "").trim(),
-          division: String(division || "").trim(),
-          round: String(round || "").trim(),
-          match_id: String(match_id || "").trim()
-        };
+        return { player_a, player_b, timeStr: time, time: parseDateAny(time), score: String(score||"").trim(), court: String(court||"").trim(), division: String(division||"").trim(), round: String(round||"").trim(), match_id: String(match_id||"").trim() };
       }).filter(r => r.player_a || r.player_b);
       matchesRows = rows;
       diagMatchesEl.textContent = rows.length;
@@ -289,58 +227,19 @@
     }
   }
 
-  // Compute Players to Stage
   function computePlayers(){
-    const now = DateTime.now().setZone(zone);
-
-    // Heuristic for "currently playing"
-    const playingIds = new Set();
-    for (const m of matchesRows){
-      const hasCourt = !!m.court;
-      const hasScore = !!m.score;
-      const startZero = (m.startStr==null) || /^0+:?0*:?0*(\.0+)?$/.test(String(m.startStr).trim());
-      if (m.finishStr && String(m.finishStr).trim() && !/^0+:?0*:?0*(\.0+)?$/.test(String(m.finishStr).trim())) continue; // finished
-      if (!startZero){ if (!hasScore) { playingIds.add(m.match_id); continue; } }
-      if (m.time && m.time <= now.plus({ minutes: 5 }) && hasCourt && !hasScore){ playingIds.add(m.match_id); continue; }
-    }
-    diagPlayingEl.textContent = playingIds.size;
-
-    // Stage candidates
-    let stageCandidates = [];
-    if (stagingCutoff){
-      for (const m of matchesRows){
-        if (!m.time || m.time > stagingCutoff) continue; // later than cutoff
-        if (m.score) continue;                            // already finished
-        if (playingIds.has(m.match_id)) continue;         // in play
-        stageCandidates.push(m);
-      }
-    }
+    if (!stagingCutoff || !matchesRows.length) return;
+    const stageCandidates = matchesRows.filter(m => m.time && m.time <= stagingCutoff && !m.score);
     diagCandidatesEl.textContent = stageCandidates.length;
 
-    // Expand to per-player rows, remove those already playing elsewhere
     const players = [];
     for (const m of stageCandidates){
       players.push({ player:m.player_a, opponent:m.player_b, m });
       players.push({ player:m.player_b, opponent:m.player_a, m });
     }
-    const nowPlayingNames = new Set();
-    for (const m of matchesRows){
-      if (playingIds.has(m.match_id)){
-        if (m.player_a) nowPlayingNames.add(m.player_a.toLowerCase());
-        if (m.player_b) nowPlayingNames.add(m.player_b.toLowerCase());
-      }
-    }
-    const cleaned = players.filter(p => p.player && !nowPlayingNames.has(String(p.player).toLowerCase()));
 
-    // Sort by earliest estimated time, unique by player
-    cleaned.sort((a,b) => {
-      const ta = a.m.time ? a.m.time.toMillis() : Number.MAX_SAFE_INTEGER;
-      const tb = b.m.time ? b.m.time.toMillis() : Number.MAX_SAFE_INTEGER;
-      return ta - tb;
-    });
-    const unique = uniqueBy(cleaned, r => String(r.player).toLowerCase());
+    const unique = [...new Map(players.filter(p=>p.player).map(p=>[p.player.toLowerCase(),p])).values()];
 
-    // Render
     playersBodyEl.innerHTML = "";
     if (!unique.length){
       playersTableEl.style.display = "none";
@@ -351,28 +250,14 @@
     diagPlayersEl.textContent = String(unique.length);
     playersEmptyEl.style.display = "none";
     playersTableEl.style.display = "table";
+
     for (const r of unique){
       const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td><strong>${escapeHtml(r.player)}</strong></td>
-        <td>${escapeHtml(r.opponent || "TBD")}</td>
-        <td>${escapeHtml(r.m.division || "")}</td>
-        <td>${escapeHtml(r.m.round || "")}</td>
-        <td>${escapeHtml(r.m.court || "TBD")}</td>
-        <td>${escapeHtml(r.m.match_id || "")}</td>
-        <td>${r.m.time ? r.m.time.toFormat("t") : "—"}</td>
-      `;
+      tr.innerHTML = `<td><strong>${r.player}</strong></td><td>${r.opponent||"TBD"}</td><td>${r.m.division||""}</td><td>${r.m.round||""}</td><td>${r.m.court||"TBD"}</td><td>${r.m.match_id||""}</td><td>${r.m.time?r.m.time.toFormat("t"):"—"}</td>`;
       playersBodyEl.appendChild(tr);
     }
   }
 
-  function escapeHtml(s){
-    return String(s==null?"":s)
-      .replace(/&/g,"&amp;").replace(/</g,"&lt;")
-      .replace(/>/g,"&gt;").replace(/\"/g,"&quot;").replace(/'/g,"&#039;");
-  }
-
-  // Timer controls
   function startTimer(){
     stopTimer();
     const sec = Math.max(5, Number(refreshSecEl.value || 60));
@@ -384,7 +269,6 @@
   }
   function stopTimer(){ if (timer){ clearInterval(timer); timer=null; } }
 
-  // Wire UI
   fetchMatchesBtn.addEventListener("click", async () => { await fetchMatches(); recordRefresh(); });
   fetchStagingBtn.addEventListener("click", async () => { await fetchStaging(); recordRefresh(); });
   toggleAutoBtn.addEventListener("click", () => {
@@ -392,20 +276,10 @@
     toggleAutoBtn.textContent = "Auto: " + (auto ? "ON" : "OFF");
     if (auto) startTimer(); else stopTimer();
   });
-  tzEl.addEventListener("change", () => {
-    zone = tzEl.value;
-    if (stagingCutoff){
-      stagingTimeBigEl.innerHTML = `Current Staging Time: ${stagingCutoff.setZone(zone).toFormat("t")} (${zone})`;
-    }
-    computePlayers();
-  });
 
-  // Init
   stagingUrlEl.value = defaultStagingUrl;
   (async () => {
     await fetchStaging();
-    // If you want to auto-load your matches URL by default, set it here:
-    // matchesUrlEl.value = "https://.../matches.csv"; await fetchMatches();
     recordRefresh();
     startTimer();
   })();
