@@ -1,0 +1,199 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { DateTime } from "luxon";
+import Papa from "papaparse";
+
+// --- Utilities ---
+const tzDefault = "America/Los_Angeles";
+
+function toKey(s) {
+  if (!s) return "";
+  return String(s)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function parseDateAny(s, zone) {
+  if (!s) return null;
+  const str = String(s).trim();
+  const d1 = Date.parse(str);
+  if (!isNaN(d1)) return DateTime.fromMillis(d1).setZone(zone);
+  const fmtCandidates = [
+    "EEE M/d/yyyy h:mm a",
+    "EEE MM/dd/yyyy h:mm a",
+    "M/d/yyyy h:mm a",
+    "MM/dd/yyyy h:mm a",
+    "yyyy-MM-dd'T'HH:mmZZ",
+    "yyyy-MM-dd'T'HH:mm:ssZZ",
+    "yyyy-MM-dd HH:mm",
+    "yyyy/MM/dd HH:mm",
+  ];
+  for (const fmt of fmtCandidates) {
+    const dt = DateTime.fromFormat(str, fmt, { zone });
+    if (dt.isValid) return dt;
+  }
+  return null;
+}
+
+export default function App() {
+  const [matchesCsvText, setMatchesCsvText] = useState("");
+  const [stagingCsvText, setStagingCsvText] = useState("");
+  const [matchesUrl, setMatchesUrl] = useState("");
+  const [stagingUrl, setStagingUrl] = useState("https://docs.google.com/spreadsheets/d/e/2PACX-1vTCnxXDwQE5lgVWkm51FKG48ZPYtOYYQN4Zj-w1M1j6giv69A_CDSSIZQHTtk0ouVg06xH_uGHa-i5A/pub?gid=0&single=true&output=csv");
+
+  const [zone, setZone] = useState(tzDefault);
+  const [manualStaging, setManualStaging] = useState("");
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [refreshEverySec, setRefreshEverySec] = useState(60);
+  const timerRef = useRef(null);
+  const [now, setNow] = useState(DateTime.now().setZone(zone));
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(DateTime.now().setZone(zone)), 1000);
+    return () => clearInterval(t);
+  }, [zone]);
+
+  const fetchAll = async () => {
+    if (matchesUrl) fetch(matchesUrl).then(r => r.text()).then(setMatchesCsvText).catch(()=>{});
+    if (stagingUrl) fetch(stagingUrl).then(r => r.text()).then(setStagingCsvText).catch(()=>{});
+  };
+
+  useEffect(() => {
+    // Initial load
+    fetchAll();
+    if (!autoRefresh || (!matchesUrl && !stagingUrl)) return;
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(fetchAll, Math.max(5, refreshEverySec) * 1000);
+    return () => timerRef.current && clearInterval(timerRef.current);
+  }, [autoRefresh, matchesUrl, stagingUrl, refreshEverySec]);
+
+  const matchesRows = useMemo(() => {
+    if (!matchesCsvText) return [];
+    const out = Papa.parse(matchesCsvText, { header: true, skipEmptyLines: true });
+    if (!out.data?.length) return [];
+    return out.data.map(r => {
+      const obj = {};
+      for (const [k, v] of Object.entries(r)) obj[toKey(k)] = v;
+      const player_a = obj["team_1"] || obj["player_a"] || obj["player1"] || obj["team1"] || "";
+      const player_b = obj["team_2"] || obj["player_b"] || obj["player2"] || obj["team2"] || "";
+      const time = obj["time"] || obj["estimated_start"] || obj["est_start"] || "";
+      const score = obj["score"] || "";
+      const court = obj["court"] || "";
+      const division = obj["event"] || obj["division"] || "";
+      const round = obj["round"] || "";
+      const match_id = obj["id"] || obj["match_id"] || obj["nr"] || "";
+
+      return {
+        player_a,
+        player_b,
+        timeStr: time,
+        time: parseDateAny(time, zone),
+        score: String(score).trim(),
+        court: String(court).trim(),
+        division: String(division).trim(),
+        round: String(round).trim(),
+        match_id: String(match_id).trim(),
+      };
+    }).filter(r => r.player_a || r.player_b);
+  }, [matchesCsvText, zone]);
+
+  const stagingInfo = useMemo(() => {
+    if (manualStaging) {
+      const dt = parseDateAny(manualStaging, zone);
+      if (dt?.isValid) return { source: "manual", time: dt };
+    }
+    if (!stagingCsvText) return null;
+    const out = Papa.parse(stagingCsvText, { header: true, skipEmptyLines: true });
+    if (out.data?.length) {
+      const row = out.data[out.data.length - 1];
+      const keyed = {};
+      for (const [k, v] of Object.entries(row)) keyed[toKey(k)] = v;
+      for (const v of Object.values(keyed)) {
+        const dt = parseDateAny(v, zone);
+        if (dt?.isValid) return { source: "csv", time: dt };
+      }
+    } else {
+      const out2 = Papa.parse(stagingCsvText, { header: false, skipEmptyLines: true });
+      const flat = (out2.data || []).flat();
+      for (const v of flat) {
+        const dt = parseDateAny(v, zone);
+        if (dt?.isValid) return { source: "csv", time: dt };
+      }
+    }
+    return null;
+  }, [stagingCsvText, manualStaging, zone]);
+
+  const stagingCutoff = stagingInfo?.time || null;
+
+  return (
+    <div className="min-h-screen bg-neutral-50 text-neutral-900 p-6">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <header className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">Staging Board – Tournament CSV Parser</h1>
+          <div className="text-sm text-neutral-500">Local time: {now.toFormat("ccc, LLL d, t")} ({zone})</div>
+        </header>
+
+        <Card className="shadow-sm">
+          <CardContent className="p-4 space-y-4">
+            <h2 className="text-lg font-medium">1) Load CSVs</h2>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Matches CSV (URL)</label>
+                <div className="flex gap-2">
+                  <Input placeholder="https://.../matches.csv" value={matchesUrl} onChange={e=>setMatchesUrl(e.target.value)} />
+                  <Button onClick={fetchAll}>Fetch</Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Staging Time CSV (URL)</label>
+                <div className="flex gap-2">
+                  <Input value={stagingUrl} onChange={e=>setStagingUrl(e.target.value)} />
+                  <Button onClick={fetchAll}>Fetch</Button>
+                </div>
+                <div className="text-xs text-neutral-500">Default loads from your published Google Sheet link. Auto fetches every {refreshEverySec}s.</div>
+                {stagingCutoff ? (
+                  <div className="text-green-700 text-sm font-medium pt-2">
+                    Current Staging Time: {stagingCutoff.toFormat("ccc, LLL d, t")} ({zone})
+                  </div>
+                ) : (
+                  <div className="text-red-600 text-sm font-medium pt-2">Fetching staging time...</div>
+                )}
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-4 pt-2">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Timezone</label>
+                <Input value={zone} onChange={e=>setZone(e.target.value)} placeholder="America/Los_Angeles" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Manual staging cutoff (optional)</label>
+                <Input placeholder="e.g., Sun 10/26/2025 1:30 PM" value={manualStaging} onChange={e=>setManualStaging(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Auto-refresh (sec)</label>
+                <div className="flex items-center gap-2">
+                  <Input type="number" min={5} value={refreshEverySec} onChange={e=>setRefreshEverySec(Number(e.target.value||60))} className="w-28" />
+                  <Button variant={autoRefresh?"default":"secondary"} onClick={()=>setAutoRefresh(v=>!v)}>{autoRefresh?"On":"Off"}</Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardContent className="p-4 space-y-3">
+            <h2 className="text-lg font-medium">Diagnostics</h2>
+            <div className="text-sm text-neutral-700">Cutoff: {stagingCutoff ? stagingCutoff.toFormat("ccc, LLL d, t") : "—"}</div>
+            <div className="text-xs text-neutral-500">Source: {stagingInfo ? stagingInfo.source : "—"}</div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
