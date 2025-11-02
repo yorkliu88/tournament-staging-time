@@ -49,9 +49,11 @@
   const { DateTime } = luxon;
   const zone = "America/Los_Angeles";
 
-  // ✅ Prefilled links
-  const stagingCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTCnxXDwQE5lgVWkm51FKG48ZPYtOYYQN4Zj-w1M1j6giv69A_CDSSIZQHTtk0ouVg06xH_uGHa-i5A/pub?gid=0&single=true&output=csv"; // your staging tab
-  const matchesCsvUrl = "https://docs.google.com/spreadsheets/d/e/YOUR_MATCHES_TAB_ID/pub?gid=123456789&single=true&output=csv"; // replace later
+  // ✅ Staging time (from your existing sheet)
+  const stagingCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTCnxXDwQE5lgVWkm51FKG48ZPYtOYYQN4Zj-w1M1j6giv69A_CDSSIZQHTtk0ouVg06xH_uGHa-i5A/pub?gid=0&single=true&output=csv";
+
+  // ✅ Matches (from staging-time-match-schedule-update sheet)
+  const matchesCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv";
 
   const stagingTimeBigEl = document.getElementById("stagingTimeBig");
   const playersEmptyEl = document.getElementById("playersEmpty");
