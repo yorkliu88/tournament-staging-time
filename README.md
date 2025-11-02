@@ -33,3 +33,5 @@ In the Google API, delete the website restriction http://www.risingstarsinfinite
             allowfullscreen="true">
     </iframe>
 </div>
+
+= Match Schedule Update (host in Github) will load the tournament software match export xlsx and convert to google sheet staging-time-match-schedule-update and exeucte a App Script to populate that sheet. A public accessable Staging-Time-and-Player will access to the Match Time schedule and the Staging Time to show the players
