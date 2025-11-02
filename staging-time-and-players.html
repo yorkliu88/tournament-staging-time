@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Tournament Staging Time & Players</title>
 
-<!-- Minimal, clean CSS -->
 <style>
   :root { --bg:#fafafa; --card:#fff; --ink:#111; --muted:#666; --ok:#0b7c3e; --warn:#c62828; --line:#eaeaea; }
   body { margin:0; font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"; background:var(--bg); color:var(--ink); }
@@ -15,6 +14,7 @@
   .card { background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
   .card .pad { padding:16px 18px; }
   .title { font-size:22px; font-weight:600; margin:4px 0 12px; }
+  .h1 { font-size:26px; font-weight:700; margin:0 0 10px; }
   label { font-size:13px; font-weight:600; color:var(--muted); display:block; margin-bottom:6px; }
   input[type=text], input[type=number] { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font:inherit; outline:none; }
   .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--line); background:#111; color:#fff; cursor:pointer; font-weight:600; }
@@ -23,14 +23,13 @@
   .muted { color:var(--muted); font-size:13px; }
   .ok { color:var(--ok); }
   .warn { color:var(--warn); }
+  .last-refresh { font-size:13px; color:var(--muted); margin-left:8px; }
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th, td { padding:10px; text-align:left; border-top:1px solid var(--line); }
   thead th { background:#f7f7f7; font-size:13px; }
-  .h1 { font-size:26px; font-weight:700; margin:0 0 10px; }
-  .grid3 { display:grid; gap:10px; grid-template-columns: 1fr 1fr 1fr; }
 </style>
 
-<!-- Libraries: Luxon (time), PapaParse (CSV) -->
+<!-- Libraries -->
 <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
@@ -41,7 +40,19 @@
       <div class="muted" id="now"></div>
     </div>
 
+    <!-- Settings row -->
     <div class="card"><div class="pad">
+      <div class="title">Auto-refresh Settings</div>
+      <div class="flex" style="align-items:center; gap:12px;">
+        <label for="refreshSec">Auto-refresh (seconds)</label>
+        <input type="number" id="refreshSec" value="60" min="5" style="width:100px;" />
+        <button class="btn secondary" id="toggleAutoBtn">Auto: ON</button>
+        <span class="last-refresh">Last refresh: <span id="lastRefresh">Never</span></span>
+      </div>
+    </div></div>
+
+    <!-- Data sources -->
+    <div class="card" style="margin-top:16px;"><div class="pad">
       <div class="title">1) Data Sources</div>
       <div class="row">
         <div>
@@ -57,41 +68,28 @@
         </div>
 
         <div>
-          <label>Staging Time CSV (URL)</label>
+          <label>Staging Time CSV (URL) — reads A2=Hour, B2=Minute</label>
           <div class="flex">
             <input type="text" id="stagingUrl" />
             <button class="btn" id="fetchStagingBtn">Fetch</button>
           </div>
           <div class="muted" style="margin-top:6px;">
-            Reads Hour/Minute from <strong>A2</strong>/<strong>B2</strong> on your published Sheet and builds today's time in the chosen timezone.
+            Builds today’s time in the selected timezone from Hour (0–23) and Minute (0–59).
           </div>
-
-          <div id="stagingStatus" style="margin-top:10px; font-weight:700;" class="ok">
-            Fetching staging time…
-          </div>
-        </div>
-      </div>
-
-      <div class="grid3" style="margin-top:16px;">
-        <div>
-          <label>Timezone (IANA)</label>
-          <input type="text" id="tz" value="America/Los_Angeles" />
-        </div>
-        <div>
-          <label>Auto-refresh (seconds)</label>
-          <input type="number" id="refreshSec" value="60" min="5" />
-        </div>
-        <div class="flex" style="align-items:flex-end; justify-content:flex-end;">
-          <button class="btn secondary" id="toggleAutoBtn">Auto: ON</button>
         </div>
       </div>
     </div></div>
 
+    <!-- Staging time + diagnostics -->
     <div class="row" style="margin-top:16px;">
       <div class="card"><div class="pad">
         <div class="title">2) Current Staging Time</div>
-        <div style="font-size:22px; font-weight:700;" id="stagingTimeBig">—</div>
-        <div class="muted" id="stagingSrc">Source: A2/B2</div>
+        <div style="font-size:22px; font-weight:700; color:#0b7c3e;" id="stagingTimeBig">
+          Fetching staging time…
+        </div>
+        <div class="muted">Timezone:
+          <input type="text" id="tz" value="America/Los_Angeles" style="width:220px; margin-left:8px;" />
+        </div>
       </div></div>
 
       <div class="card"><div class="pad">
@@ -103,6 +101,7 @@
       </div></div>
     </div>
 
+    <!-- Players table -->
     <div class="card" style="margin-top:16px;"><div class="pad">
       <div class="title">4) Players to Stage</div>
       <div class="muted" id="playersEmpty">Load Matches CSV to compute staging players.</div>
@@ -129,16 +128,15 @@
 
   // Elements
   const nowEl = document.getElementById("now");
+  const lastRefreshEl = document.getElementById("lastRefresh");
+  const refreshSecEl = document.getElementById("refreshSec");
+  const toggleAutoBtn = document.getElementById("toggleAutoBtn");
   const matchesUrlEl = document.getElementById("matchesUrl");
   const stagingUrlEl = document.getElementById("stagingUrl");
   const fetchMatchesBtn = document.getElementById("fetchMatchesBtn");
   const fetchStagingBtn = document.getElementById("fetchStagingBtn");
-  const stagingStatusEl = document.getElementById("stagingStatus");
   const stagingTimeBigEl = document.getElementById("stagingTimeBig");
-  const stagingSrcEl = document.getElementById("stagingSrc");
   const tzEl = document.getElementById("tz");
-  const refreshSecEl = document.getElementById("refreshSec");
-  const toggleAutoBtn = document.getElementById("toggleAutoBtn");
   const diagMatchesEl = document.getElementById("diagMatches");
   const diagPlayingEl = document.getElementById("diagPlaying");
   const diagCandidatesEl = document.getElementById("diagCandidates");
@@ -150,16 +148,19 @@
   // State
   let auto = true;
   let timer = null;
-  let matchesRows = [];
-  let stagingCutoff = null; // Luxon DateTime
   let zone = tzEl.value;
+  let stagingCutoff = null;   // Luxon DateTime
+  let matchesRows = [];
 
-  // Clock
+  // Clock display
   setInterval(() => {
     nowEl.textContent = "Local time: " + DateTime.now().setZone(zone).toFormat("ccc, LLL d, t") + " (" + zone + ")";
   }, 1000);
 
-  // Helpers
+  function recordRefresh(){
+    lastRefreshEl.textContent = DateTime.now().setZone(zone).toFormat("ccc, LLL d yyyy t");
+  }
+
   function toKey(s){
     if (!s) return "";
     return String(s).trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
@@ -196,38 +197,34 @@
     return out;
   }
 
-  // Fetch helpers
   async function fetchText(url){
     const r = await fetch(url, { cache: "no-store" });
     if (!r.ok) throw new Error("Fetch failed " + r.status);
-    return await r.text();
+    return { text: await r.text(), headers: r.headers };
   }
 
-  // NEW: Fetch staging cutoff from A2/B2 (Hour/Minute)
+  // Staging: read A2/B2 (Hour/Minute) and include Last-Modified header
   async function fetchStaging(){
     const url = stagingUrlEl.value.trim();
     if (!url) return;
     try {
-      stagingStatusEl.textContent = "Fetching staging time…";
-      const text = await fetchText(url);
+      stagingTimeBigEl.textContent = "Fetching staging time…";
+      const { text, headers } = await fetchText(url);
 
-      // Try header:true first (Hour,Minute in row 1 as A2/B2 values)
+      // Try header:true (first row contains hour/min columns)
       let hour = null, minute = null;
       let parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
       if (parsed.data && parsed.data.length){
         const first = parsed.data[0];
-        // Identify hour/min keys by regex (Hour or H) and Minute (Min)
         const hourKey = Object.keys(first).find(k => /^(hour|h)$/i.test(k)) || Object.keys(first)[0];
         const minuteKey = Object.keys(first).find(k => /^(minute|min|m)$/i.test(k)) || Object.keys(first)[1];
         hour = Number(first[hourKey]);
         minute = Number(first[minuteKey]);
       }
-
-      // Fallback: header:false, take second row (index 1) for A2/B2
+      // Fallback: header:false (row 2 = A2/B2)
       if ((hour==null || Number.isNaN(hour) || minute==null || Number.isNaN(minute))){
         const p2 = Papa.parse(text, { header:false, skipEmptyLines:true });
         const rows = p2.data || [];
-        // rows[0] is header (Hour,Minute), rows[1] should be A2/B2
         if (rows.length >= 2){
           const r = rows[1];
           hour = Number(r[0]);
@@ -235,29 +232,28 @@
         }
       }
 
-      let dt = null;
-      if (!Number.isNaN(hour) && !Number.isNaN(minute) && hour!=null && minute!=null){
-        dt = DateTime.now().setZone(zone).set({ hour, minute, second:0, millisecond:0 });
-      }
-
-      if (dt){
-        stagingCutoff = dt;
-        stagingStatusEl.innerHTML = `<span class="ok">Loaded from A2/B2 (${dt.toFormat("t")}).</span>`;
-        stagingTimeBigEl.textContent = dt.toFormat("ccc, LLL d, t") + " (" + zone + ")";
-        stagingSrcEl.textContent = "Source: Hour/Minute cells (A2,B2)";
-      } else {
+      if (Number.isNaN(hour) || Number.isNaN(minute) || hour==null || minute==null){
         stagingCutoff = null;
-        stagingStatusEl.innerHTML = `<span class="warn">Could not read Hour/Minute from A2/B2.</span>`;
-        stagingTimeBigEl.textContent = "—";
-        stagingSrcEl.textContent = "Source: —";
+        stagingTimeBigEl.innerHTML = '<span class="warn">Could not read Hour/Minute from A2/B2.</span>';
+        return;
       }
 
-      computePlayers();
+      const dt = DateTime.now().setZone(zone).set({ hour, minute, second:0, millisecond:0 });
+
+      // Last-Modified header -> format "Sun Nov 2 2025 7:48 PM"
+      let lastModStr = "unknown";
+      try {
+        const lastMod = headers.get("Last-Modified");
+        if (lastMod) {
+          lastModStr = DateTime.fromHTTP(lastMod).setZone(zone).toFormat("ccc LLL d yyyy t");
+        }
+      } catch(_) {}
+
+      stagingCutoff = dt;
+      stagingTimeBigEl.innerHTML = `Staging Time: ${dt.toFormat("t")} (Last Updated: ${lastModStr})`;
     } catch (e){
       stagingCutoff = null;
-      stagingStatusEl.innerHTML = `<span class="warn">Fetch failed.</span>`;
-      stagingTimeBigEl.textContent = "—";
-      stagingSrcEl.textContent = "Source: —";
+      stagingTimeBigEl.innerHTML = '<span class="warn">Fetch failed.</span>';
     }
   }
 
@@ -265,7 +261,7 @@
     const url = matchesUrlEl.value.trim();
     if (!url) return;
     try {
-      const text = await fetchText(url);
+      const { text } = await fetchText(url);
       const out = Papa.parse(text, { header:true, skipEmptyLines:true });
       const rows = (out.data || []).map(r => {
         const obj = {}; for (const [k,v] of Object.entries(r)) obj[toKey(k)] = v;
@@ -302,20 +298,17 @@
     }
   }
 
-  // Logic
+  // Compute staging players
   function computePlayers(){
     const now = DateTime.now().setZone(zone);
-    // currently playing heuristic
     const playingIds = new Set();
     for (const m of matchesRows){
       const hasCourt = !!m.court;
       const hasScore = !!m.score;
       const startZero = (m.startStr==null) || looksZero(m.startStr);
-      if (m.finishStr && !looksZero(m.finishStr)) continue; // finished
+      if (m.finishStr && !looksZero(m.finishStr)) continue;
       if (!startZero){ if (!hasScore) { playingIds.add(m.match_id); continue; } }
-      if (m.time && m.time <= now.plus({ minutes: 5 }) && hasCourt && !hasScore){
-        playingIds.add(m.match_id); continue;
-      }
+      if (m.time && m.time <= now.plus({ minutes: 5 }) && hasCourt && !hasScore){ playingIds.add(m.match_id); continue; }
     }
     diagPlayingEl.textContent = playingIds.size;
 
@@ -383,20 +376,21 @@
       .replace(/>/g,"&gt;").replace(/\"/g,"&quot;").replace(/'/g,"&#039;");
   }
 
-  // Auto controls
+  // Timer controls
   function startTimer(){
     stopTimer();
     const sec = Math.max(5, Number(refreshSecEl.value || 60));
-    timer = setInterval(() => {
-      if (stagingUrlEl.value.trim()) fetchStaging();
-      if (matchesUrlEl.value.trim()) fetchMatches();
+    timer = setInterval(async () => {
+      await fetchStaging();
+      if (matchesUrlEl.value.trim()) await fetchMatches();
+      recordRefresh();
     }, sec * 1000);
   }
   function stopTimer(){ if (timer){ clearInterval(timer); timer=null; } }
 
   // Wire UI
-  fetchMatchesBtn.addEventListener("click", fetchMatches);
-  fetchStagingBtn.addEventListener("click", fetchStaging);
+  fetchMatchesBtn.addEventListener("click", async () => { await fetchMatches(); recordRefresh(); });
+  fetchStagingBtn.addEventListener("click", async () => { await fetchStaging(); recordRefresh(); });
   toggleAutoBtn.addEventListener("click", () => {
     auto = !auto;
     toggleAutoBtn.textContent = "Auto: " + (auto ? "ON" : "OFF");
@@ -405,7 +399,8 @@
   tzEl.addEventListener("change", () => {
     zone = tzEl.value;
     if (stagingCutoff){
-      stagingTimeBigEl.textContent = stagingCutoff.setZone(zone).toFormat("ccc, LLL d, t") + " (" + zone + ")";
+      stagingTimeBigEl.innerHTML =
+        `Staging Time: ${stagingCutoff.setZone(zone).toFormat("t")} (Last Updated: ${lastRefreshEl.textContent || "unknown"})`;
     }
     computePlayers();
   });
@@ -414,8 +409,9 @@
   stagingUrlEl.value = defaultStagingUrl;
   (async () => {
     await fetchStaging();
-    // If you also have matches URL ready, uncomment next line to fetch once at load:
+    // If you also have a Matches CSV URL ready, uncomment to fetch on load:
     // await fetchMatches();
+    recordRefresh();
     startTimer();
   })();
 })();
