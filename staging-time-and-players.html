@@ -1,199 +1,427 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { DateTime } from "luxon";
-import Papa from "papaparse";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tournament Staging Time & Players</title>
 
-// --- Utilities ---
-const tzDefault = "America/Los_Angeles";
-
-function toKey(s) {
-  if (!s) return "";
-  return String(s)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
-
-function parseDateAny(s, zone) {
-  if (!s) return null;
-  const str = String(s).trim();
-  const d1 = Date.parse(str);
-  if (!isNaN(d1)) return DateTime.fromMillis(d1).setZone(zone);
-  const fmtCandidates = [
-    "EEE M/d/yyyy h:mm a",
-    "EEE MM/dd/yyyy h:mm a",
-    "M/d/yyyy h:mm a",
-    "MM/dd/yyyy h:mm a",
-    "yyyy-MM-dd'T'HH:mmZZ",
-    "yyyy-MM-dd'T'HH:mm:ssZZ",
-    "yyyy-MM-dd HH:mm",
-    "yyyy/MM/dd HH:mm",
-  ];
-  for (const fmt of fmtCandidates) {
-    const dt = DateTime.fromFormat(str, fmt, { zone });
-    if (dt.isValid) return dt;
+<!-- Minimal, clean CSS -->
+<style>
+  :root { --bg:#fafafa; --card:#fff; --ink:#111; --muted:#666; --ok:#0b7c3e; --warn:#c62828; --line:#eaeaea; }
+  body { margin:0; font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"; background:var(--bg); color:var(--ink); }
+  .wrap { max-width:1100px; margin:0 auto; padding:24px; }
+  .row { display:grid; gap:16px; grid-template-columns: 1fr; }
+  @media(min-width: 860px){ .row{ grid-template-columns: 1fr 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+  .card .pad { padding:16px 18px; }
+  .title { font-size:22px; font-weight:600; margin:4px 0 12px; }
+  label { font-size:13px; font-weight:600; color:var(--muted); display:block; margin-bottom:6px; }
+  input[type=text], input[type=number] {
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font:inherit; outline:none;
   }
-  return null;
-}
+  .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--line); background:#111; color:#fff; cursor:pointer; font-weight:600; }
+  .btn.secondary { background:#f5f5f5; color:#111; }
+  .flex { display:flex; gap:10px; align-items:center; }
+  .muted { color:var(--muted); font-size:13px; }
+  .pill { display:inline-block; padding:4px 10px; border-radius:999px; background:#eef7ff; color:#1b5ea8; font-size:12px; border:1px solid #d6e8ff;}
+  .ok { color:var(--ok); }
+  .warn { color:var(--warn); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { padding:10px; text-align:left; border-top:1px solid var(--line); }
+  thead th { background:#f7f7f7; font-size:13px; }
+  .h1 { font-size:26px; font-weight:700; margin:0 0 10px; }
+  .right { text-align:right; }
+  .grid3 { display:grid; gap:10px; grid-template-columns: 1fr 1fr 1fr; }
+</style>
 
-export default function App() {
-  const [matchesCsvText, setMatchesCsvText] = useState("");
-  const [stagingCsvText, setStagingCsvText] = useState("");
-  const [matchesUrl, setMatchesUrl] = useState("");
-  const [stagingUrl, setStagingUrl] = useState("https://docs.google.com/spreadsheets/d/e/2PACX-1vTCnxXDwQE5lgVWkm51FKG48ZPYtOYYQN4Zj-w1M1j6giv69A_CDSSIZQHTtk0ouVg06xH_uGHa-i5A/pub?gid=0&single=true&output=csv");
+<!-- Libraries: Luxon (time), PapaParse (CSV) -->
+<script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="flex" style="justify-content:space-between; margin-bottom:12px;">
+      <div class="h1">Staging Time & Players</div>
+      <div class="muted" id="now"></div>
+    </div>
 
-  const [zone, setZone] = useState(tzDefault);
-  const [manualStaging, setManualStaging] = useState("");
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [refreshEverySec, setRefreshEverySec] = useState(60);
-  const timerRef = useRef(null);
-  const [now, setNow] = useState(DateTime.now().setZone(zone));
+    <div class="card"><div class="pad">
+      <div class="title">1) Data Sources</div>
+      <div class="row">
+        <div>
+          <label>Matches CSV (URL) — optional</label>
+          <div class="flex">
+            <input type="text" id="matchesUrl" placeholder="https://.../matches.csv" />
+            <button class="btn" id="fetchMatchesBtn">Fetch</button>
+          </div>
+          <div class="muted" style="margin-top:6px;">
+            Expected headers: <code>ID</code>, <code>Time</code>, <code>Event</code>, <code>Round</code>, <code>Court</code>,
+            <code>Team 1</code>, <code>Team 2</code>, <code>Score</code>, <code>Start</code>, <code>Finish</code>.
+          </div>
+        </div>
 
-  useEffect(() => {
-    const t = setInterval(() => setNow(DateTime.now().setZone(zone)), 1000);
-    return () => clearInterval(t);
-  }, [zone]);
+        <div>
+          <label>Staging Time CSV (URL)</label>
+          <div class="flex">
+            <input type="text" id="stagingUrl" />
+            <button class="btn" id="fetchStagingBtn">Fetch</button>
+          </div>
+          <div class="muted" style="margin-top:6px;">
+            Uses last row / first time-like value (e.g., <em>Sun 10/26/2025 1:30 PM</em> or ISO).
+          </div>
 
-  const fetchAll = async () => {
-    if (matchesUrl) fetch(matchesUrl).then(r => r.text()).then(setMatchesCsvText).catch(()=>{});
-    if (stagingUrl) fetch(stagingUrl).then(r => r.text()).then(setStagingCsvText).catch(()=>{});
-  };
+          <div id="stagingStatus" style="margin-top:10px; font-weight:700;" class="ok">
+            Fetching staging time…
+          </div>
+        </div>
+      </div>
 
-  useEffect(() => {
-    // Initial load
-    fetchAll();
-    if (!autoRefresh || (!matchesUrl && !stagingUrl)) return;
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(fetchAll, Math.max(5, refreshEverySec) * 1000);
-    return () => timerRef.current && clearInterval(timerRef.current);
-  }, [autoRefresh, matchesUrl, stagingUrl, refreshEverySec]);
+      <div class="grid3" style="margin-top:16px;">
+        <div>
+          <label>Timezone (IANA)</label>
+          <input type="text" id="tz" value="America/Los_Angeles" />
+        </div>
+        <div>
+          <label>Auto-refresh (seconds)</label>
+          <input type="number" id="refreshSec" value="60" min="5" />
+        </div>
+        <div class="flex" style="align-items:flex-end; justify-content:flex-end;">
+          <button class="btn secondary" id="toggleAutoBtn">Auto: ON</button>
+        </div>
+      </div>
+    </div></div>
 
-  const matchesRows = useMemo(() => {
-    if (!matchesCsvText) return [];
-    const out = Papa.parse(matchesCsvText, { header: true, skipEmptyLines: true });
-    if (!out.data?.length) return [];
-    return out.data.map(r => {
-      const obj = {};
-      for (const [k, v] of Object.entries(r)) obj[toKey(k)] = v;
-      const player_a = obj["team_1"] || obj["player_a"] || obj["player1"] || obj["team1"] || "";
-      const player_b = obj["team_2"] || obj["player_b"] || obj["player2"] || obj["team2"] || "";
-      const time = obj["time"] || obj["estimated_start"] || obj["est_start"] || "";
-      const score = obj["score"] || "";
-      const court = obj["court"] || "";
-      const division = obj["event"] || obj["division"] || "";
-      const round = obj["round"] || "";
-      const match_id = obj["id"] || obj["match_id"] || obj["nr"] || "";
+    <div class="row" style="margin-top:16px;">
+      <div class="card"><div class="pad">
+        <div class="title">2) Current Staging Time</div>
+        <div style="font-size:22px; font-weight:700;" id="stagingTimeBig">—</div>
+        <div class="muted" id="stagingSrc">Source: —</div>
+      </div></div>
 
-      return {
-        player_a,
-        player_b,
-        timeStr: time,
-        time: parseDateAny(time, zone),
-        score: String(score).trim(),
-        court: String(court).trim(),
-        division: String(division).trim(),
-        round: String(round).trim(),
-        match_id: String(match_id).trim(),
-      };
-    }).filter(r => r.player_a || r.player_b);
-  }, [matchesCsvText, zone]);
+      <div class="card"><div class="pad">
+        <div class="title">3) Diagnostics</div>
+        <div>Matches loaded: <span id="diagMatches">0</span></div>
+        <div>Currently playing (heuristic): <span id="diagPlaying">0</span></div>
+        <div>Staging candidates: <span id="diagCandidates">0</span></div>
+        <div>Players to stage (unique): <span id="diagPlayers">0</span></div>
+      </div></div>
+    </div>
 
-  const stagingInfo = useMemo(() => {
-    if (manualStaging) {
-      const dt = parseDateAny(manualStaging, zone);
-      if (dt?.isValid) return { source: "manual", time: dt };
-    }
-    if (!stagingCsvText) return null;
-    const out = Papa.parse(stagingCsvText, { header: true, skipEmptyLines: true });
-    if (out.data?.length) {
-      const row = out.data[out.data.length - 1];
-      const keyed = {};
-      for (const [k, v] of Object.entries(row)) keyed[toKey(k)] = v;
-      for (const v of Object.values(keyed)) {
-        const dt = parseDateAny(v, zone);
-        if (dt?.isValid) return { source: "csv", time: dt };
-      }
-    } else {
-      const out2 = Papa.parse(stagingCsvText, { header: false, skipEmptyLines: true });
-      const flat = (out2.data || []).flat();
-      for (const v of flat) {
-        const dt = parseDateAny(v, zone);
-        if (dt?.isValid) return { source: "csv", time: dt };
-      }
+    <div class="card" style="margin-top:16px;"><div class="pad">
+      <div class="title">4) Players to Stage</div>
+      <div class="muted" id="playersEmpty">Load Matches CSV to compute staging players.</div>
+      <div style="overflow:auto;">
+        <table id="playersTable" style="display:none;">
+          <thead>
+            <tr>
+              <th>Player</th><th>Opponent</th><th>Division</th><th>Round</th><th>Court</th><th>Match ID</th><th>Est. Start</th>
+            </tr>
+          </thead>
+          <tbody id="playersBody"></tbody>
+        </table>
+      </div>
+    </div></div>
+  </div>
+
+<script>
+(function(){
+  const { DateTime } = luxon;
+
+  // Defaults
+  const defaultStagingUrl =
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vTCnxXDwQE5lgVWkm51FKG48ZPYtOYYQN4Zj-w1M1j6giv69A_CDSSIZQHTtk0ouVg06xH_uGHa-i5A/pub?gid=0&single=true&output=csv";
+
+  // Elements
+  const nowEl = document.getElementById("now");
+  const matchesUrlEl = document.getElementById("matchesUrl");
+  const stagingUrlEl = document.getElementById("stagingUrl");
+  const fetchMatchesBtn = document.getElementById("fetchMatchesBtn");
+  const fetchStagingBtn = document.getElementById("fetchStagingBtn");
+  const stagingStatusEl = document.getElementById("stagingStatus");
+  const stagingTimeBigEl = document.getElementById("stagingTimeBig");
+  const stagingSrcEl = document.getElementById("stagingSrc");
+  const tzEl = document.getElementById("tz");
+  const refreshSecEl = document.getElementById("refreshSec");
+  const toggleAutoBtn = document.getElementById("toggleAutoBtn");
+  const diagMatchesEl = document.getElementById("diagMatches");
+  const diagPlayingEl = document.getElementById("diagPlaying");
+  const diagCandidatesEl = document.getElementById("diagCandidates");
+  const diagPlayersEl = document.getElementById("diagPlayers");
+  const playersEmptyEl = document.getElementById("playersEmpty");
+  const playersTableEl = document.getElementById("playersTable");
+  const playersBodyEl = document.getElementById("playersBody");
+
+  // State
+  let auto = true;
+  let timer = null;
+  let matchesRows = [];
+  let stagingCutoff = null; // Luxon DateTime
+  let zone = tzEl.value;
+
+  // Clock
+  setInterval(() => {
+    nowEl.textContent = "Local time: " + DateTime.now().setZone(zone).toFormat("ccc, LLL d, t") + " (" + zone + ")";
+  }, 1000);
+
+  // Helpers
+  function toKey(s){
+    if (!s) return "";
+    return String(s).trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+  }
+  function looksZero(v){
+    if (v == null) return true;
+    const s = String(v).trim();
+    if (!s) return true;
+    return /^0+:?0*:?0*(\\.0+)?$/.test(s);
+  }
+  function parseDateAny(s){
+    if (!s) return null;
+    const str = String(s).trim();
+    const d1 = Date.parse(str);
+    if (!Number.isNaN(d1)) return DateTime.fromMillis(d1).setZone(zone);
+    const fmts = [
+      "EEE M/d/yyyy h:mm a", "EEE MM/dd/yyyy h:mm a",
+      "M/d/yyyy h:mm a", "MM/dd/yyyy h:mm a",
+      "yyyy-MM-dd'T'HH:mmZZ", "yyyy-MM-dd'T'HH:mm:ssZZ",
+      "yyyy-MM-dd HH:mm", "yyyy/MM/dd HH:mm"
+    ];
+    for (const f of fmts){
+      const dt = DateTime.fromFormat(str, f, { zone });
+      if (dt.isValid) return dt;
     }
     return null;
-  }, [stagingCsvText, manualStaging, zone]);
+  }
 
-  const stagingCutoff = stagingInfo?.time || null;
+  function uniqueBy(arr, getKey){
+    const seen = new Set(); const out = [];
+    for (const it of arr){
+      const k = getKey(it);
+      if (!seen.has(k)){ seen.add(k); out.push(it); }
+    }
+    return out;
+  }
 
-  return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900 p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <header className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Staging Board – Tournament CSV Parser</h1>
-          <div className="text-sm text-neutral-500">Local time: {now.toFormat("ccc, LLL d, t")} ({zone})</div>
-        </header>
+  // Fetchers
+  async function fetchText(url){
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) throw new Error("Fetch failed " + r.status);
+    return await r.text();
+  }
 
-        <Card className="shadow-sm">
-          <CardContent className="p-4 space-y-4">
-            <h2 className="text-lg font-medium">1) Load CSVs</h2>
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Matches CSV (URL)</label>
-                <div className="flex gap-2">
-                  <Input placeholder="https://.../matches.csv" value={matchesUrl} onChange={e=>setMatchesUrl(e.target.value)} />
-                  <Button onClick={fetchAll}>Fetch</Button>
-                </div>
-              </div>
+  async function fetchStaging(){
+    const url = stagingUrlEl.value.trim();
+    if (!url) return;
+    try {
+      stagingStatusEl.textContent = "Fetching staging time…";
+      const text = await fetchText(url);
+      const parsed = Papa.parse(text, { header:true, skipEmptyLines:true });
+      let dt = null;
+      if (parsed.data && parsed.data.length){
+        const row = parsed.data[parsed.data.length - 1];
+        const keyed = {};
+        for (const [k,v] of Object.entries(row)) keyed[toKey(k)] = v;
+        for (const v of Object.values(keyed)){
+          const tryDt = parseDateAny(v);
+          if (tryDt?.isValid){ dt = tryDt; break; }
+        }
+      } else {
+        // maybe a single-cell CSV
+        const p2 = Papa.parse(text, { header:false, skipEmptyLines:true });
+        const flat = (p2.data || []).flat();
+        for (const v of flat){
+          const tryDt = parseDateAny(v);
+          if (tryDt?.isValid){ dt = tryDt; break; }
+        }
+      }
+      if (dt){
+        stagingCutoff = dt;
+        stagingStatusEl.innerHTML = `<span class="ok">Loaded.</span>`;
+        stagingTimeBigEl.textContent = dt.toFormat("ccc, LLL d, t") + " (" + zone + ")";
+        stagingSrcEl.textContent = "Source: CSV";
+      } else {
+        stagingCutoff = null;
+        stagingStatusEl.innerHTML = `<span class="warn">Could not parse a time from the CSV.</span>`;
+        stagingTimeBigEl.textContent = "—";
+        stagingSrcEl.textContent = "Source: —";
+      }
+      // recompute players if matches already loaded
+      computePlayers();
+    } catch (e){
+      stagingCutoff = null;
+      stagingStatusEl.innerHTML = `<span class="warn">Fetch failed.</span>`;
+      stagingTimeBigEl.textContent = "—";
+      stagingSrcEl.textContent = "Source: —";
+    }
+  }
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Staging Time CSV (URL)</label>
-                <div className="flex gap-2">
-                  <Input value={stagingUrl} onChange={e=>setStagingUrl(e.target.value)} />
-                  <Button onClick={fetchAll}>Fetch</Button>
-                </div>
-                <div className="text-xs text-neutral-500">Default loads from your published Google Sheet link. Auto fetches every {refreshEverySec}s.</div>
-                {stagingCutoff ? (
-                  <div className="text-green-700 text-sm font-medium pt-2">
-                    Current Staging Time: {stagingCutoff.toFormat("ccc, LLL d, t")} ({zone})
-                  </div>
-                ) : (
-                  <div className="text-red-600 text-sm font-medium pt-2">Fetching staging time...</div>
-                )}
-              </div>
-            </div>
+  async function fetchMatches(){
+    const url = matchesUrlEl.value.trim();
+    if (!url) return;
+    try {
+      const text = await fetchText(url);
+      const out = Papa.parse(text, { header:true, skipEmptyLines:true });
+      const rows = (out.data || []).map(r => {
+        const obj = {}; for (const [k,v] of Object.entries(r)) obj[toKey(k)] = v;
+        const player_a = obj["team_1"] || obj["player_a"] || obj["player1"] || obj["team1"] || "";
+        const player_b = obj["team_2"] || obj["player_b"] || obj["player2"] || obj["team2"] || "";
+        const time = obj["time"] || obj["estimated_start"] || obj["est_start"] || "";
+        const start = obj["start"];
+        const finish = obj["finish"];
+        const score = obj["score"] || "";
+        const court = obj["court"] || "";
+        const division = obj["event"] || obj["division"] || "";
+        const round = obj["round"] || "";
+        const match_id = obj["id"] || obj["match_id"] || obj["nr"] || "";
 
-            <div className="grid md:grid-cols-3 gap-4 pt-2">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Timezone</label>
-                <Input value={zone} onChange={e=>setZone(e.target.value)} placeholder="America/Los_Angeles" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Manual staging cutoff (optional)</label>
-                <Input placeholder="e.g., Sun 10/26/2025 1:30 PM" value={manualStaging} onChange={e=>setManualStaging(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Auto-refresh (sec)</label>
-                <div className="flex items-center gap-2">
-                  <Input type="number" min={5} value={refreshEverySec} onChange={e=>setRefreshEverySec(Number(e.target.value||60))} className="w-28" />
-                  <Button variant={autoRefresh?"default":"secondary"} onClick={()=>setAutoRefresh(v=>!v)}>{autoRefresh?"On":"Off"}</Button>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        return {
+          player_a, player_b,
+          timeStr: time,
+          time: parseDateAny(time),
+          startStr: start, finishStr: finish,
+          score: String(score || "").trim(),
+          court: String(court || "").trim(),
+          division: String(division || "").trim(),
+          round: String(round || "").trim(),
+          match_id: String(match_id || "").trim()
+        };
+      }).filter(r => r.player_a || r.player_b);
+      matchesRows = rows;
+      diagMatchesEl.textContent = rows.length;
+      computePlayers();
+    } catch (e){
+      matchesRows = [];
+      diagMatchesEl.textContent = "0";
+      computePlayers();
+    }
+  }
 
-        <Card className="shadow-sm">
-          <CardContent className="p-4 space-y-3">
-            <h2 className="text-lg font-medium">Diagnostics</h2>
-            <div className="text-sm text-neutral-700">Cutoff: {stagingCutoff ? stagingCutoff.toFormat("ccc, LLL d, t") : "—"}</div>
-            <div className="text-xs text-neutral-500">Source: {stagingInfo ? stagingInfo.source : "—"}</div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
+  // Logic
+  function computePlayers(){
+    const now = DateTime.now().setZone(zone);
+    // currently playing heuristic
+    const playingIds = new Set();
+    for (const m of matchesRows){
+      const hasCourt = !!m.court;
+      const hasScore = !!m.score;
+      const startZero = (m.startStr==null) || looksZero(m.startStr);
+      // A) finished -> skip tagging as playing
+      if (m.finishStr && !looksZero(m.finishStr)) continue;
+      // B) started and no score -> playing
+      if (!startZero){ if (!hasScore) playingIds.add(m.match_id); continue; }
+      // C) no start recorded, but time passed and has court and no score -> likely playing
+      if (m.time && m.time <= now.plus({ minutes: 5 }) && hasCourt && !hasScore){
+        playingIds.add(m.match_id); continue;
+      }
+    }
+    diagPlayingEl.textContent = playingIds.size;
+
+    let stageCandidates = [];
+    if (stagingCutoff){
+      for (const m of matchesRows){
+        if (!m.time || m.time > stagingCutoff) continue;
+        if (m.score) continue; // completed
+        if (playingIds.has(m.match_id)) continue; // in play
+        stageCandidates.push(m);
+      }
+    }
+    diagCandidatesEl.textContent = stageCandidates.length;
+
+    // to per-player rows
+    const players = [];
+    for (const m of stageCandidates){
+      players.push({ player:m.player_a, opponent:m.player_b, m });
+      players.push({ player:m.player_b, opponent:m.player_a, m });
+    }
+    // filter empties & those in playing matches
+    const nowPlayingNames = new Set();
+    for (const m of matchesRows){
+      if (playingIds.has(m.match_id)){
+        if (m.player_a) nowPlayingNames.add(m.player_a.toLowerCase());
+        if (m.player_b) nowPlayingNames.add(m.player_b.toLowerCase());
+      }
+    }
+    const cleaned = players.filter(p => p.player && !nowPlayingNames.has(String(p.player).toLowerCase()));
+
+    // sort by earliest est time, unique by player
+    cleaned.sort((a,b) => {
+      const ta = a.m.time ? a.m.time.toMillis() : Number.MAX_SAFE_INTEGER;
+      const tb = b.m.time ? b.m.time.toMillis() : Number.MAX_SAFE_INTEGER;
+      return ta - tb;
+    });
+    const unique = uniqueBy(cleaned, r => String(r.player).toLowerCase());
+
+    // paint table
+    playersBodyEl.innerHTML = "";
+    if (!unique.length){
+      playersTableEl.style.display = "none";
+      playersEmptyEl.style.display = "block";
+      diagPlayersEl.textContent = "0";
+      return;
+    }
+    diagPlayersEl.textContent = String(unique.length);
+    playersEmptyEl.style.display = "none";
+    playersTableEl.style.display = "table";
+    for (const r of unique){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><strong>${escapeHtml(r.player)}</strong></td>
+        <td>${escapeHtml(r.opponent || "TBD")}</td>
+        <td>${escapeHtml(r.m.division || "")}</td>
+        <td>${escapeHtml(r.m.round || "")}</td>
+        <td>${escapeHtml(r.m.court || "TBD")}</td>
+        <td>${escapeHtml(r.m.match_id || "")}</td>
+        <td>${r.m.time ? r.m.time.toFormat("t") : "—"}</td>
+      `;
+      playersBodyEl.appendChild(tr);
+    }
+  }
+
+  function escapeHtml(s){
+    return String(s==null?"":s)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;").replace(/\"/g,"&quot;").replace(/'/g,"&#039;");
+  }
+
+  // Auto controls
+  function startTimer(){
+    stopTimer();
+    const sec = Math.max(5, Number(refreshSecEl.value || 60));
+    timer = setInterval(() => {
+      // refresh staging and matches (if URL present)
+      if (stagingUrlEl.value.trim()) fetchStaging();
+      if (matchesUrlEl.value.trim()) fetchMatches();
+    }, sec * 1000);
+  }
+  function stopTimer(){ if (timer){ clearInterval(timer); timer=null; } }
+
+  // Wire UI
+  fetchMatchesBtn.addEventListener("click", fetchMatches);
+  fetchStagingBtn.addEventListener("click", fetchStaging);
+  toggleAutoBtn.addEventListener("click", () => {
+    auto = !auto;
+    toggleAutoBtn.textContent = "Auto: " + (auto ? "ON" : "OFF");
+    if (auto) startTimer(); else stopTimer();
+  });
+  tzEl.addEventListener("change", () => {
+    zone = tzEl.value;
+    // Re-render staging time in the new zone (if we have it)
+    if (stagingCutoff){
+      stagingTimeBigEl.textContent = stagingCutoff.setZone(zone).toFormat("ccc, LLL d, t") + " (" + zone + ")";
+    }
+    computePlayers();
+  });
+
+  // Initial setup
+  stagingUrlEl.value = defaultStagingUrl;
+  // First load immediately:
+  (async () => {
+    await fetchStaging();
+    // If you also have matches URL ready, uncomment next line to fetch once at load:
+    // await fetchMatches();
+    // Start auto tick
+    startTimer();
+  })();
+})();
+</script>
+</body>
+</html>
