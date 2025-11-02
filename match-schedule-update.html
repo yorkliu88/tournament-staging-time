@@ -19,18 +19,16 @@
   thead th{background:#f7f7f7}
   code.inline{background:#f6f6f6;padding:2px 6px;border-radius:6px;border:1px solid #eee}
 </style>
-<!-- SheetJS for XLSX parsing -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 <div class="wrap">
   <h1 style="margin:0 0 12px">Match Schedule Update (Matches Only)</h1>
 
-  <!-- Endpoint (prefilled & read-only) -->
   <div class="card">
     <div class="title">1) Apps Script Web App</div>
     <div class="muted" style="margin-bottom:6px">
-      This endpoint receives the normalized rows and writes them to the <b>Matches</b> tab in your sheet
+      Writes normalized rows to the <b>Matches</b> tab in your sheet
       <span class="inline">staging-time-match-schedule-update</span>.
     </div>
     <input id="endpoint" type="text"
@@ -38,22 +36,20 @@
       readonly />
   </div>
 
-  <!-- XLSX upload -->
   <div class="card">
     <div class="title">2) Upload Tournament XLSX</div>
-    <div class="muted">Drop your tournament export (.xlsx). We’ll parse & normalize columns, then upload to the <b>Matches</b> tab.</div>
-    <input id="xlsxInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+    <div class="muted">Pick your tournament export (.xlsx). We’ll parse & normalize columns, then upload to <b>Matches</b>.</div>
+    <input id="xlsxInput" type="file" accept=".xlsx,.XLSX,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
     <div style="margin-top:10px">
       <button class="btn" id="sendBtn">Send to Google Sheet</button>
       <span id="status" style="margin-left:10px" class="muted">Idle</span>
     </div>
   </div>
 
-  <!-- FYI: Published CSV link for your public page -->
   <div class="card">
     <div class="title">Published Matches CSV (for your public page)</div>
     <div class="muted" style="margin-bottom:8px">
-      This is the CSV your <b>staging-time-and-players.html</b> reads for matches:
+      Used by <b>staging-time-and-players.html</b>:
     </div>
     <input type="text" readonly
       value="https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv" />
@@ -62,14 +58,13 @@
         Open CSV</a>
       &nbsp;•&nbsp;
       <a target="_blank" href="https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pubhtml?gid=0&single=true">
-        Open HTML View</a>
+        HTML View</a>
     </div>
   </div>
 
-  <!-- Preview -->
   <div class="card">
     <div class="title">Preview (first 20 rows)</div>
-    <div class="muted">Normalized columns: <code class="inline">ID</code>, <code class="inline">Time</code>, <code class="inline">Event</code>, <code class="inline">Round</code>, <code class="inline">Court</code>, <code class="inline">Team 1</code>, <code class="inline">Team 2</code>, <code class="inline">Score</code>, <code class="inline">Start</code>, <code class="inline">Finish</code></div>
+    <div class="muted">Schema: <code class="inline">ID</code>, <code class="inline">Time</code>, <code class="inline">Event</code>, <code class="inline">Round</code>, <code class="inline">Court</code>, <code class="inline">Team 1</code>, <code class="inline">Team 2</code>, <code class="inline">Score</code>, <code class="inline">Start</code>, <code class="inline">Finish</code></div>
     <div style="overflow:auto">
       <table>
         <thead><tr id="thead"></tr></thead>
@@ -87,26 +82,27 @@
   const statusEl = document.getElementById('status');
   const theadEl = document.getElementById('thead');
   const tbodyEl = document.getElementById('tbody');
+
   let normalizedRows = [];
+  let lastFile = null;
 
   function toKey(s){return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
 
-  // Map arbitrary tournament columns → stable schema expected by public page
   function normalizeSheet(jsonRows){
     const out=[];
     for(const r of jsonRows){
       const row={}; for(const [k,v] of Object.entries(r)) row[toKey(k)]=v;
 
-      const id=row.id||row.match_id||row.nr||row.match||'';
-      const time=row.time||row.estimated_start||row.est_start||row.start_time||'';
-      const event=row.event||row.division||row.category||'';
-      const round=row.round||row.stage||'';
-      const court=row.court||row.court_name||'';
-      const team1=row.team_1||row.team1||row.player_a||row.player1||'';
-      const team2=row.team_2||row.team2||row.player_b||row.player2||'';
-      const score=row.score||row.result||'';
-      const start=row.start||row.actual_start||'';
-      const finish=row.finish||row.end||'';
+      const id = row.id || row.match_id || row.nr || row.no || row.match || '';
+      const time = row.time || row.estimated_start || row.est_start || row.start_time || '';
+      const event = row.event || row.division || row.category || '';
+      const round = row.round || row.stage || '';
+      const court = row.court || row.court_name || '';
+      const team1 = row.team_1 || row.team1 || row.player_a || row.player1 || row['home'] || '';
+      const team2 = row.team_2 || row.team2 || row.player_b || row.player2 || row['away'] || '';
+      const score = row.score || row.result || '';
+      const start = row.start || row.actual_start || '';
+      const finish = row.finish || row.end || '';
 
       if (team1 || team2){
         out.push({
@@ -128,7 +124,7 @@
 
   function renderPreview(rows){
     tbodyEl.innerHTML=''; theadEl.innerHTML='';
-    if(!rows.length) return;
+    if(!rows.length){ statusEl.innerHTML='<span class="warn">Parsed 0 rows — check file/sheet contents.</span>'; return; }
     const headers=Object.keys(rows[0]);
     for(const h of headers){const th=document.createElement('th');th.textContent=h;theadEl.appendChild(th);}
     for(const r of rows.slice(0,20)){
@@ -136,31 +132,48 @@
       tr.innerHTML=headers.map(h=>`<td>${escapeHtml(r[h])}</td>`).join('');
       tbodyEl.appendChild(tr);
     }
+    statusEl.innerHTML=`<span class="ok">Parsed ${rows.length} rows.</span>`;
   }
   function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');}
 
-  xlsxInput.addEventListener('change', async (e) => {
-    const file=e.target.files?.[0]; if(!file) return;
-    statusEl.textContent='Parsing XLSX…';
-    const data=await file.arrayBuffer();
-    const wb=XLSX.read(data,{type:'array'});
+  async function parseSelectedFileIfNeeded(){
+    if (normalizedRows.length > 0) return true;
+    const file = xlsxInput.files && xlsxInput.files[0] ? xlsxInput.files[0] : lastFile;
+    if (!file) return false;
+    lastFile = file;
+    try{
+      statusEl.textContent='Parsing XLSX…';
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data,{type:'array'});
 
-    // Pick first non-empty sheet
-    let rows=[];
-    for(const name of wb.SheetNames){
-      const ws=wb.Sheets[name];
-      const json=XLSX.utils.sheet_to_json(ws,{defval:''});
-      if(json.length){ rows=json; break; }
+      // First non-empty sheet
+      let rows = [];
+      for (const name of wb.SheetNames) {
+        const ws = wb.Sheets[name];
+        const json = XLSX.utils.sheet_to_json(ws,{defval:''});
+        if (json.length) { rows = json; break; }
+      }
+      normalizedRows = normalizeSheet(rows);
+      renderPreview(normalizedRows);
+      return normalizedRows.length > 0;
+    } catch (err){
+      statusEl.innerHTML = `<span class="warn">Parse failed: ${escapeHtml(String(err))}</span>`;
+      return false;
     }
-    normalizedRows=normalizeSheet(rows);
-    renderPreview(normalizedRows);
-    statusEl.innerHTML=`<span class="ok">Parsed ${normalizedRows.length} rows.</span>`;
+  }
+
+  xlsxInput.addEventListener('change', async () => {
+    normalizedRows = []; // reset
+    await parseSelectedFileIfNeeded();
   });
 
   sendBtn.addEventListener('click', async () => {
-    const endpoint=(endpointEl.value||'').trim();
-    if(!endpoint){ alert('Missing Apps Script URL.'); return; }
-    if(!normalizedRows.length){ alert('Please upload an XLSX first.'); return; }
+    const endpoint = (endpointEl.value||'').trim();
+    if (!endpoint) { alert('Missing Apps Script URL.'); return; }
+
+    // NEW: attempt parse on click if we don't have rows yet
+    const ok = await parseSelectedFileIfNeeded();
+    if (!ok) { alert('Could not parse any rows from the XLSX.'); return; }
 
     const body = { matches: normalizedRows, overwrite: true };
 
@@ -176,7 +189,7 @@
       if(!j.ok) throw new Error(j.error||'Unknown error');
       statusEl.innerHTML=`<span class="ok">Wrote ${j.rows} rows to Matches.</span>`;
     }catch(err){
-      statusEl.innerHTML=`<span class="warn">Failed: ${String(err)}</span>`;
+      statusEl.innerHTML=`<span class="warn">Upload failed: ${escapeHtml(String(err))}</span>`;
     }
   });
 })();
