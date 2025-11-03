@@ -29,8 +29,7 @@
   <div class="card">
     <div class="title">1) Apps Script Web App</div>
     <div class="muted" style="margin-bottom:6px">
-      Writes normalized rows to the <b>Matches</b> tab in your sheet
-      <span class="inline">staging-time-match-schedule-update</span>.
+      Writes normalized rows to the <b>Matches</b> tab in your sheet.
     </div>
     <input id="endpoint" type="text"
       value="https://script.google.com/macros/s/AKfycbyGK-R4txGHYAZ8cenp7pXDZyzJjlf1uPXY4I0JJk381986X8jclaGUeUZ36a2i_vfe4w/exec"
@@ -49,9 +48,9 @@
   </div>
 
   <div class="card">
-    <div class="title">Published Matches CSV (for your public page)</div>
+    <div class="title">Published Matches CSV (public page reads this)</div>
     <div class="muted" style="margin-bottom:8px">
-      Used by <b>staging-time-and-players.html</b>:
+      Used by your <b>staging-time-and-players.html</b>:
     </div>
     <input type="text" readonly
       value="https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv" />
@@ -78,6 +77,10 @@
 
 <script>
 (function(){
+  // ---- CONFIG ----
+  const MATCHES_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv";
+
+  // ---- Elements ----
   const endpointEl = document.getElementById('endpoint');
   const xlsxInput = document.getElementById('xlsxInput');
   const sendBtn = document.getElementById('sendBtn');
@@ -89,36 +92,27 @@
   let normalizedRows = [];
   let lastFile = null;
 
+  // ---- Helpers ----
   function toKey(s){return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
-
   function looksLikeHeaderValue(v){
     const s = String(v||'').trim().toLowerCase();
     const keys = ['nr','no','id','time','estimated','event','division','category','round','stage','court','team','player','score','result','start','finish','end'];
     return keys.some(k => s.includes(k));
   }
-
-  function scoreHeaderRow(arr){
-    // Score based on how many cells look like header keywords
-    let score = 0;
-    for (const cell of arr) if (looksLikeHeaderValue(cell)) score++;
-    return score;
-  }
+  function scoreHeaderRow(arr){ let score=0; for(const cell of arr) if (looksLikeHeaderValue(cell)) score++; return score; }
 
   function normalizeFromArrays(rows){
-    // rows: array of arrays (header:1)
-    // Find best header row within first ~30 lines
     const maxScan = Math.min(30, rows.length);
     let best = { idx: -1, score: -1 };
     for (let i=0;i<maxScan;i++){
-      const score = scoreHeaderRow(rows[i]||[]);
-      if (score > best.score) best = { idx:i, score };
+      const sc = scoreHeaderRow(rows[i]||[]);
+      if (sc > best.score) best = { idx:i, score:sc };
     }
-    if (best.idx < 0 || best.score < 2) return { headerIdx: -1, headers: [], rows: [] };
+    if (best.idx < 0 || best.score < 2) return { headerIdx: -1, rows: [] };
 
     const headerIdx = best.idx;
     const headersRaw = (rows[headerIdx] || []).map(x => String(x||'').trim());
 
-    // Build objects from subsequent rows until end (ignore fully empty)
     const objs = [];
     for (let r=headerIdx+1;r<rows.length;r++){
       const row = rows[r] || [];
@@ -132,7 +126,6 @@
       objs.push(o);
     }
 
-    // Rename columns to normalized schema
     const out = [];
     for (const r of objs){
       const keyed = {}; for (const [k,v] of Object.entries(r)) keyed[toKey(k)] = v;
@@ -163,7 +156,7 @@
         });
       }
     }
-    return { headerIdx, headers: headersRaw, rows: out };
+    return { headerIdx, rows: out };
   }
 
   function renderPreview(rows){
@@ -178,7 +171,6 @@
     }
     statusEl.innerHTML=`<span class="ok">Parsed ${rows.length} rows.</span>`;
   }
-
   function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');}
 
   async function parseSelectedFileIfNeeded(){
@@ -192,44 +184,31 @@
       const wb = XLSX.read(data,{type:'array'});
 
       let bestSheet = null;
-      let bestHeaderIdx = -1;
-      let bestScore = -1;
       let bestResult = null;
 
       for (const name of wb.SheetNames){
         const ws = wb.Sheets[name];
-        const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:''}); // raw rows
+        const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
         if (!rows || !rows.length) continue;
 
-        // try header detection on this sheet
-        const maxScan = Math.min(30, rows.length);
-        let localBestIdx = -1, localBestScore = -1;
-        for (let i=0;i<maxScan;i++){
-          const sc = scoreHeaderRow(rows[i]||[]);
-          if (sc > localBestScore){ localBestScore = sc; localBestIdx = i; }
-        }
-        if (localBestScore < 2) continue;
-
-        // build normalized rows
         const res = normalizeFromArrays(rows);
-        if (res.rows.length > 0 && localBestScore >= bestScore){
+        if (res.rows.length > 0){
           bestSheet = name;
-          bestHeaderIdx = res.headerIdx;
-          bestScore = localBestScore;
           bestResult = res;
+          break; // first good sheet is enough
         }
       }
 
       if (!bestResult || !bestResult.rows.length){
-        // fallback: simple first non-empty sheet with header objects
+        // Fallback: attempt object-mode on first non-empty sheet
         for (const name of wb.SheetNames){
           const ws = wb.Sheets[name];
           const json = XLSX.utils.sheet_to_json(ws,{defval:''});
           if (json.length){
-            const out = normalizeFromArrays([Object.keys(json[0])].concat(json.map(obj => Object.values(obj))));
-            if (out.rows.length){
-              bestSheet = name; bestHeaderIdx = 0; bestResult = out; break;
-            }
+            const hdr = [Object.keys(json[0])];
+            const arr = json.map(obj => Object.values(obj));
+            const res = normalizeFromArrays(hdr.concat(arr));
+            if (res.rows.length){ bestSheet = name; bestResult = res; break; }
           }
         }
       }
@@ -237,7 +216,7 @@
       if (bestResult && bestResult.rows.length){
         normalizedRows = bestResult.rows;
         renderPreview(normalizedRows);
-        diagEl.textContent = `Detected sheet: "${bestSheet}", header row: ${bestHeaderIdx+1}`;
+        diagEl.textContent = `Detected sheet: "${bestSheet}", header row: ${bestResult.headerIdx+1}`;
         return true;
       } else {
         normalizedRows = [];
@@ -252,10 +231,11 @@
   }
 
   xlsxInput.addEventListener('change', async () => {
-    normalizedRows = []; // reset
+    normalizedRows = [];
     await parseSelectedFileIfNeeded();
   });
 
+  // ---- SEND: uses no-cors, then verifies by polling the published CSV ----
   sendBtn.addEventListener('click', async () => {
     const endpoint = (endpointEl.value||'').trim();
     if (!endpoint) { alert('Missing Apps Script URL.'); return; }
@@ -264,21 +244,36 @@
     if (!ok) { alert('Could not parse any rows from the XLSX.'); return; }
 
     const body = { matches: normalizedRows, overwrite: true };
+    statusEl.textContent = 'Sending to Google Sheet…';
 
-    try{
-      statusEl.textContent='Sending to Google Sheet…';
-      const r=await fetch(endpoint,{
-        mode: "no-cors",
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(body),
-        mode:'cors'
+    try {
+      // 1) Fire-and-forget POST (bypasses CORS read restrictions)
+      await fetch(endpoint, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(body)
       });
-      const j=await r.json();
-      if(!j.ok) throw new Error(j.error||'Unknown error');
-      statusEl.innerHTML=`<span class="ok">Wrote ${j.rows} rows to Matches.</span>`;
-    }catch(err){
-      statusEl.innerHTML=`<span class="warn">Upload failed: ${escapeHtml(String(err))}</span>`;
+
+      // 2) Wait briefly for Apps Script to write
+      await new Promise(r => setTimeout(r, 2000));
+
+      // 3) Poll the published CSV to verify write
+      const bust = (MATCHES_CSV_URL.includes('?') ? '&' : '?') + 'cb=' + Date.now();
+      const resp = await fetch(MATCHES_CSV_URL + bust, { cache: 'no-store' });
+      if (!resp.ok) throw new Error('CSV fetch failed ' + resp.status);
+      const csvText = await resp.text();
+
+      const lines = csvText.trim().split(/\r?\n/);
+      const rowCount = lines.length > 1 ? (lines.length - 1) : 0;
+
+      if (rowCount > 0) {
+        statusEl.innerHTML = `<span class="ok">Success: CSV shows ${rowCount} data rows.</span>`;
+      } else {
+        statusEl.innerHTML = `<span class="warn">Uploaded, but CSV shows 0 rows. Ensure this Web App is bound to the SAME sheet you published, or use openById in Apps Script.</span>`;
+      }
+    } catch (err) {
+      statusEl.innerHTML = `<span class="warn">Upload may have succeeded, but verification failed: ${escapeHtml(String(err))}</span>`;
     }
   });
 })();
