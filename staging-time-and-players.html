@@ -223,14 +223,12 @@
     // - queued: ETA from simulation
     const rows = [];
     for (const m of onCourt){
-      const eta = now; // already started
-      rows.push({ m, eta, etaLabel: "Now" });
+      rows.push({ m, etaLabel: "Now", eta: now });
     }
     for (let i=0;i<queued.length;i++){
       const m = queued[i];
       const eta = etas[i] || now;
-      const safeEta = eta < now ? now : eta;
-      rows.push({ m, eta: safeEta, etaLabel: safeEta.toFormat("t") });
+      rows.push({ m, etaLabel: (eta < now ? now : eta).toFormat("t"), eta: (eta < now ? now : eta) });
     }
 
     // Split rows into per-player entries, unique by player, ordered by ETA asc
@@ -273,7 +271,14 @@
     etaBadgeEl.textContent = `ETA assumes ${MATCH_DURATION_MIN}m matches • Courts in play: ${C} • Queue: ${queued.length}`;
   }
 
-  function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');}
+  function escapeHtml(s){
+    return String(s ?? '')
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/\"/g,'&quot;')
+      .replace(/'/g,'&#039;');
+  }
 
   async function refreshAll(){
     try{
