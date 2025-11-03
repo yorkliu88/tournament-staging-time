@@ -14,6 +14,7 @@
   table{width:100%;border-collapse:collapse;font-size:14px}
   th,td{padding:8px;border-top:1px solid #eee;text-align:left}
   thead th{background:#f7f7f7}
+  .diag{margin-top:8px;color:#666;font-size:12px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
@@ -29,50 +30,58 @@
   </div>
 
   <div class="card">
-    <div class="title">Players to Stage</div>
+    <div class="title">Players to Stage (with ETA)</div>
     <div class="muted" id="playersEmpty">Loading…</div>
     <div style="overflow:auto;">
       <table id="playersTable" style="display:none;">
         <thead>
           <tr>
-            <th>Player</th><th>Opponent</th><th>Division</th><th>Round</th><th>Court</th><th>Match ID</th><th>Est. Start</th>
+            <th>Player</th><th>Opponent</th><th>Division</th><th>Round</th>
+            <th>Court</th><th>Match ID</th><th>ETA</th><th>Est. Start</th>
           </tr>
         </thead>
         <tbody id="playersBody"></tbody>
       </table>
+      <div id="diag" class="diag"></div>
     </div>
   </div>
 </div>
 
 <script>
 (function(){
-  const { DateTime } = luxon;
+  const { DateTime, Duration } = luxon;
   const zone = "America/Los_Angeles";
 
-  // ✅ Staging time (your existing sheet publishing A2/B2 hour & minute)
+  // ✅ Staging time (A2/B2 hour & minute) – your existing sheet:
   const stagingCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTCnxXDwQE5lgVWkm51FKG48ZPYtOYYQN4Zj-w1M1j6giv69A_CDSSIZQHTtk0ouVg06xH_uGHa-i5A/pub?gid=0&single=true&output=csv";
 
-  // ✅ Matches CSV (from staging-time-match-schedule-update sheet — ensure gid matches the Matches tab)
+  // ✅ Matches CSV (from staging-time-match-schedule-update) – ensure gid matches the Matches tab:
   const matchesCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv";
+
+  // ⚙️ Tuning
+  const MATCH_DURATION_MIN = 30;         // duration per match
+  const DEFAULT_REMAINING_MIN = 15;      // assumed remaining for in-progress if Start unknown
 
   const stagingTimeBigEl = document.getElementById("stagingTimeBig");
   const playersEmptyEl = document.getElementById("playersEmpty");
   const playersTableEl = document.getElementById("playersTable");
-  const playersBodyEl = document.getElementById("playersBody");
+  const playersBodyEl  = document.getElementById("playersBody");
+  const diagEl         = document.getElementById("diag");
 
   let matchesRows = [];
-  let stagingHour = null, stagingMinute = null; // <-- store hour/minute only
+  let stagingHour = null, stagingMinute = null;
 
   function toKey(s){ return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
   function parseDateAny(s){
     if (!s) return null;
-    const d1 = Date.parse(String(s).trim());
+    const raw = String(s).trim();
+    const d1 = Date.parse(raw);
     if (!Number.isNaN(d1)) return DateTime.fromMillis(d1).setZone(zone);
     const fmts = [
       "EEE M/d/yyyy h:mm a","EEE MM/dd/yyyy h:mm a","M/d/yyyy h:mm a","MM/dd/yyyy h:mm a",
       "yyyy-MM-dd'T'HH:mmZZ","yyyy-MM-dd'T'HH:mm:ssZZ","yyyy-MM-dd HH:mm","yyyy/MM/dd HH:mm"
     ];
-    for (const f of fmts){ const dt = DateTime.fromFormat(String(s).trim(), f, { zone }); if (dt.isValid) return dt; }
+    for (const f of fmts){ const dt = DateTime.fromFormat(raw, f, { zone }); if (dt.isValid) return dt; }
     return null;
   }
   function uniqueBy(arr, keyFn){ const seen = new Set(); const out=[]; for(const it of arr){const k=keyFn(it); if(!seen.has(k)){seen.add(k); out.push(it);} } return out; }
@@ -81,8 +90,6 @@
     if(!r.ok) throw new Error("Fetch failed "+r.status);
     return await r.text();
   }
-
-  // Build a cutoff from each match's OWN date + (stagingHour:stagingMinute)
   function cutoffForMatchDate(matchDt, hour, minute){
     if (!matchDt) return null;
     return matchDt.set({ hour, minute, second:0, millisecond:0 });
@@ -90,9 +97,8 @@
 
   async function loadStaging(){
     const txt = await fetchCsvText(stagingCsvUrl);
-
     let hour=null, minute=null;
-    // Try header mode
+
     let p = Papa.parse(txt,{header:true,skipEmptyLines:true});
     if (p.data && p.data.length){
       const first = p.data[0];
@@ -100,13 +106,11 @@
       const minKey  = Object.keys(first).find(k=>/min/i.test(k)) ||Object.keys(first)[1];
       hour = Number(first[hourKey]); minute = Number(first[minKey]);
     }
-    // Fallback: raw cells
     if ((hour==null||isNaN(hour)||minute==null||isNaN(minute))){
       const p2 = Papa.parse(txt,{header:false,skipEmptyLines:true});
       const rows = p2.data||[];
       if (rows.length>=2){ hour=Number(rows[1][0]); minute=Number(rows[1][1]); }
     }
-
     if (isNaN(hour)||isNaN(minute)){
       stagingHour = stagingMinute = null;
       stagingTimeBigEl.textContent = "Unavailable";
@@ -116,7 +120,6 @@
     stagingHour = hour;
     stagingMinute = minute;
 
-    // Display only (no date binding here)
     const display = DateTime.now().setZone(zone).set({ hour, minute, second:0, millisecond:0 });
     stagingTimeBigEl.textContent = "Current Staging Time: " + display.toFormat("t");
   }
@@ -126,13 +129,16 @@
     const out = Papa.parse(txt,{header:true,skipEmptyLines:true});
     matchesRows = (out.data||[]).map(r=>{
       const o={}; for(const [k,v] of Object.entries(r)) o[toKey(k)] = v;
+      const timeStr = o.time || o.estimated_start || o.est_start || "";
+      const startStr = o.start || o.actual_start || "";
       return {
         id:o.id||o.match_id||o.nr||"",
-        timeStr:o.time||o.estimated_start||o.est_start||"",
-        time:parseDateAny(o.time||o.estimated_start||o.est_start||""),
+        timeStr,
+        time:parseDateAny(timeStr),
+        start:parseDateAny(startStr),
         event:o.event||o.division||"",
         round:o.round||"",
-        court:o.court||"",
+        court:(o.court||"").trim(),
         a:o.team_1||o.player_a||o.player1||o.team1||"",
         b:o.team_2||o.player_b||o.player2||o.team2||"",
         score:(o.score||"").trim()
@@ -140,43 +146,97 @@
     }).filter(r=>r.a||r.b);
   }
 
+  // Simulate ETAs for staged queue with C parallel courts:
+  // - Active courts have remaining time (from Start; else default).
+  // - Each staged match adds 30 min to the earliest-available court.
+  function simulateEtas(activeCourtsRemainingMin, stagedCount){
+    const now = DateTime.now().setZone(zone);
+    let lanes = activeCourtsRemainingMin.slice(); // minutes until free per court
+    if (lanes.length === 0) lanes = [0]; // at least one lane
+
+    const etas = [];
+    for (let i=0;i<stagedCount;i++){
+      // find court that frees the soonest
+      let idx = 0;
+      for (let j=1;j<lanes.length;j++) if (lanes[j] < lanes[idx]) idx = j;
+      const etaMin = Math.max(0, lanes[idx]); // never negative
+      etas.push(now.plus({ minutes: etaMin }));
+      // after assigning this match, that court will be busy for a full match duration
+      lanes[idx] = etaMin + MATCH_DURATION_MIN;
+    }
+    return etas;
+  }
+
   function renderPlayers(){
+    const now = DateTime.now().setZone(zone);
+
     if (stagingHour == null || stagingMinute == null || !matchesRows.length) {
       playersEmptyEl.textContent = "Waiting for data…";
       playersTableEl.style.display = "none";
+      diagEl.textContent = "";
       return;
     }
 
-    // Include match if: (a) match time <= (match's own date + staging hour:minute), (b) no final score,
-    // (c) NOT already in play (court assigned but no score)
-    const stageCandidates = matchesRows.filter(m => {
-      if (!m.time) return false;
+    // 1) Identify in-progress matches: has Court, no Score
+    const inProgress = matchesRows.filter(m => m.court && !m.score);
 
-      const perMatchCutoff = cutoffForMatchDate(m.time, stagingHour, stagingMinute);
-      if (!perMatchCutoff) return false;
-
-      if (m.time > perMatchCutoff) return false;
-
-      const hasCourt = !!(m.court && m.court.trim());
-      const hasScore = !!(m.score && m.score.trim());
-
-      if (hasCourt && !hasScore) return false; // already playing
-      return !hasScore; // only those not finished
+    // Remaining minutes for each active court
+    const remainingPerCourt = inProgress.map(m => {
+      if (m.start && m.start.isValid) {
+        const elapsed = Math.max(0, now.diff(m.start, 'minutes').minutes);
+        const remain = Math.max(0, MATCH_DURATION_MIN - elapsed);
+        return remain;
+      }
+      return DEFAULT_REMAINING_MIN; // assume halfway done if unknown
     });
 
-    // Build unique player list
+    // Number of parallel courts currently busy (also our throughput)
+    let C = remainingPerCourt.length;
+    if (C === 0) {
+      // If no active matches, try to infer court count from seen court names in the data
+      const distinctCourts = Array.from(new Set(matchesRows.map(m => m.court).filter(Boolean)));
+      C = Math.max(1, distinctCourts.length || 1);
+    }
+
+    // 2) Stage candidates: no Score, no Court, match time <= (match date + stagingHour:stagingMinute)
+    const stageCandidates = matchesRows.filter(m => {
+      if (!m.time) return false;
+      const cutoff = cutoffForMatchDate(m.time, stagingHour, stagingMinute);
+      if (!cutoff) return false;
+      const hasScore = !!m.score;
+      const hasCourt = !!m.court;
+      if (hasScore) return false;        // finished — not staging
+      if (hasCourt) return false;        // already on court — not staging
+      return m.time <= cutoff;           // at or before staging cutoff for that match's date
+    });
+
+    // Sort staged queue by match scheduled time
+    stageCandidates.sort((a,b) => (a.time?.toMillis()||0) - (b.time?.toMillis()||0));
+
+    // 3) Compute ETAs by simulating queue on C courts
+    const activeRemaining = remainingPerCourt.slice(0, Math.max(1, C)); // ensure length C if needed
+    while (activeRemaining.length < C) activeRemaining.push(0);
+    const etas = simulateEtas(activeRemaining, stageCandidates.length);
+
+    // 4) Build per-player rows with ETA; unique by player name
     const players = [];
-    for (const m of stageCandidates) {
-      players.push({ player: m.a, opponent: m.b, m });
-      players.push({ player: m.b, opponent: m.a, m });
+    for (let i=0;i<stageCandidates.length;i++){
+      const m = stageCandidates[i];
+      const eta = etas[i] || now;
+      // ensure ETA isn't in the past
+      const safeEta = eta < now ? now : eta;
+      players.push({ player: m.a, opponent: m.b, m, eta: safeEta });
+      players.push({ player: m.b, opponent: m.a, m, eta: safeEta });
     }
     const unique = uniqueBy(players.filter(p => p.player), p => p.player.toLowerCase());
-    unique.sort((x, y) => (x.m.time?.toMillis() || 0) - (y.m.time?.toMillis() || 0));
+    unique.sort((x,y) => (x.eta?.toMillis()||0) - (y.eta?.toMillis()||0));
 
+    // 5) Render
     playersBodyEl.innerHTML = "";
     if (!unique.length) {
       playersEmptyEl.textContent = "No players to stage right now.";
       playersTableEl.style.display = "none";
+      diagEl.textContent = `Diagnostics: C=${C} active courts, in-progress=${inProgress.length}, staged=0.`;
       return;
     }
 
@@ -190,9 +250,12 @@
         <td>${escapeHtml(r.m.round || "")}</td>
         <td>${escapeHtml(r.m.court || "TBD")}</td>
         <td>${escapeHtml(r.m.id || "")}</td>
+        <td>${r.eta ? r.eta.toFormat("t") : "—"}</td>
         <td>${r.m.time ? r.m.time.toFormat("t") : "—"}</td>`;
       playersBodyEl.appendChild(tr);
     }
+
+    diagEl.textContent = `Diagnostics: C=${C} courts busy, in-progress=${inProgress.length}, staged=${stageCandidates.length}, matchDuration=${MATCH_DURATION_MIN}min.`;
   }
 
   function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');}
@@ -204,6 +267,7 @@
     }catch(e){
       stagingTimeBigEl.textContent="Error loading";
       playersEmptyEl.textContent="Error loading";
+      diagEl.textContent = String(e);
     }
   }
 
