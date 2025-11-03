@@ -35,3 +35,5 @@ In the Google API, delete the website restriction http://www.risingstarsinfinite
 </div>
 
 = Match Schedule Update (host in Github) will load the tournament software match export xlsx and convert to google sheet staging-time-match-schedule-update and exeucte a App Script to populate that sheet. A public accessable Staging-Time-and-Player will access to the Match Time schedule and the Staging Time to show the players
+
+= When run into the Github doesn't write into Google Sheet. Usually it is Cor issue, debug that, use broswer to run the GitHub hosted page and show error console to ChatGPT =
