@@ -8,12 +8,13 @@
   body{margin:0;font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:#fafafa;color:#111}
   .wrap{max-width:1100px;margin:0 auto;padding:24px}
   .card{background:#fff;border:1px solid #eaeaea;border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.04);padding:18px 20px;margin-bottom:18px}
-  .title{font-weight:700;font-size:20px;margin-bottom:8px}
+  .title{font-weight:700;font-size:20px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .muted{color:#666;font-size:13px}
   .ok{color:#0b7c3e;font-size:22px;font-weight:700}
   table{width:100%;border-collapse:collapse;font-size:14px}
   th,td{padding:8px;border-top:1px solid #eee;text-align:left}
   thead th{background:#f7f7f7}
+  .badge{display:inline-block;padding:4px 8px;border:1px solid #e5e5e5;background:#f7f7f7;border-radius:999px;font-size:12px;color:#444}
   .diag{margin-top:8px;color:#666;font-size:12px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
@@ -24,20 +25,23 @@
   <h1 style="margin:0 0 12px">Staging Time & Players</h1>
 
   <div class="card">
-    <div class="title">Current Staging Time</div>
+    <div class="title">
+      <span>Current Staging Time</span>
+      <span id="etaBadge" class="badge" style="display:none;"></span>
+    </div>
     <div id="stagingTimeBig" class="ok">Loading…</div>
     <div class="muted">Auto-refresh every 60s</div>
   </div>
 
   <div class="card">
-    <div class="title">Players to Stage (with ETA)</div>
+    <div class="title">Players to Stage (includes assigned courts)</div>
     <div class="muted" id="playersEmpty">Loading…</div>
     <div style="overflow:auto;">
       <table id="playersTable" style="display:none;">
         <thead>
           <tr>
             <th>Player</th><th>Opponent</th><th>Division</th><th>Round</th>
-            <th>Court</th><th>Match ID</th><th>ETA</th><th>Est. Start</th>
+            <th>Court</th><th>Match ID</th><th>Scheduled</th><th>Est. Start</th>
           </tr>
         </thead>
         <tbody id="playersBody"></tbody>
@@ -49,24 +53,25 @@
 
 <script>
 (function(){
-  const { DateTime, Duration } = luxon;
+  const { DateTime } = luxon;
   const zone = "America/Los_Angeles";
 
-  // ✅ Staging time (A2/B2 hour & minute) – your existing sheet:
+  // ✅ Staging time (A2 hour, B2 minute)
   const stagingCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTCnxXDwQE5lgVWkm51FKG48ZPYtOYYQN4Zj-w1M1j6giv69A_CDSSIZQHTtk0ouVg06xH_uGHa-i5A/pub?gid=0&single=true&output=csv";
 
-  // ✅ Matches CSV (from staging-time-match-schedule-update) – ensure gid matches the Matches tab:
+  // ✅ Matches CSV (ensure gid is the Matches tab)
   const matchesCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv";
 
-  // ⚙️ Tuning
-  const MATCH_DURATION_MIN = 30;         // duration per match
-  const DEFAULT_REMAINING_MIN = 15;      // assumed remaining for in-progress if Start unknown
+  // ⚙️ ETA tuning
+  const MATCH_DURATION_MIN = 30;      // per match
+  const DEFAULT_REMAINING_MIN = 15;   // assumed remaining for in-progress if Start unknown
 
   const stagingTimeBigEl = document.getElementById("stagingTimeBig");
-  const playersEmptyEl = document.getElementById("playersEmpty");
-  const playersTableEl = document.getElementById("playersTable");
-  const playersBodyEl  = document.getElementById("playersBody");
-  const diagEl         = document.getElementById("diag");
+  const playersEmptyEl   = document.getElementById("playersEmpty");
+  const playersTableEl   = document.getElementById("playersTable");
+  const playersBodyEl    = document.getElementById("playersBody");
+  const diagEl           = document.getElementById("diag");
+  const etaBadgeEl       = document.getElementById("etaBadge");
 
   let matchesRows = [];
   let stagingHour = null, stagingMinute = null;
@@ -114,6 +119,7 @@
     if (isNaN(hour)||isNaN(minute)){
       stagingHour = stagingMinute = null;
       stagingTimeBigEl.textContent = "Unavailable";
+      etaBadgeEl.style.display = "none";
       return;
     }
 
@@ -129,7 +135,7 @@
     const out = Papa.parse(txt,{header:true,skipEmptyLines:true});
     matchesRows = (out.data||[]).map(r=>{
       const o={}; for(const [k,v] of Object.entries(r)) o[toKey(k)] = v;
-      const timeStr = o.time || o.estimated_start || o.est_start || "";
+      const timeStr  = o.time || o.estimated_start || o.est_start || "";
       const startStr = o.start || o.actual_start || "";
       return {
         id:o.id||o.match_id||o.nr||"",
@@ -146,22 +152,18 @@
     }).filter(r=>r.a||r.b);
   }
 
-  // Simulate ETAs for staged queue with C parallel courts:
-  // - Active courts have remaining time (from Start; else default).
-  // - Each staged match adds 30 min to the earliest-available court.
+  // Simulate ETAs for queued matches given remaining minutes for active courts
   function simulateEtas(activeCourtsRemainingMin, stagedCount){
     const now = DateTime.now().setZone(zone);
-    let lanes = activeCourtsRemainingMin.slice(); // minutes until free per court
-    if (lanes.length === 0) lanes = [0]; // at least one lane
+    let lanes = activeCourtsRemainingMin.slice();
+    if (lanes.length === 0) lanes = [0];
 
     const etas = [];
     for (let i=0;i<stagedCount;i++){
-      // find court that frees the soonest
       let idx = 0;
       for (let j=1;j<lanes.length;j++) if (lanes[j] < lanes[idx]) idx = j;
-      const etaMin = Math.max(0, lanes[idx]); // never negative
+      const etaMin = Math.max(0, lanes[idx]);
       etas.push(now.plus({ minutes: etaMin }));
-      // after assigning this match, that court will be busy for a full match duration
       lanes[idx] = etaMin + MATCH_DURATION_MIN;
     }
     return etas;
@@ -174,69 +176,80 @@
       playersEmptyEl.textContent = "Waiting for data…";
       playersTableEl.style.display = "none";
       diagEl.textContent = "";
+      etaBadgeEl.style.display = "none";
       return;
     }
 
-    // 1) Identify in-progress matches: has Court, no Score
+    // In-progress (consume courts): has Court, no Score
     const inProgress = matchesRows.filter(m => m.court && !m.score);
 
     // Remaining minutes for each active court
     const remainingPerCourt = inProgress.map(m => {
       if (m.start && m.start.isValid) {
         const elapsed = Math.max(0, now.diff(m.start, 'minutes').minutes);
-        const remain = Math.max(0, MATCH_DURATION_MIN - elapsed);
-        return remain;
+        return Math.max(0, MATCH_DURATION_MIN - elapsed);
       }
-      return DEFAULT_REMAINING_MIN; // assume halfway done if unknown
+      return DEFAULT_REMAINING_MIN;
     });
 
-    // Number of parallel courts currently busy (also our throughput)
+    // Infer # of courts (if none in progress, use distinct court names as hint)
     let C = remainingPerCourt.length;
     if (C === 0) {
-      // If no active matches, try to infer court count from seen court names in the data
       const distinctCourts = Array.from(new Set(matchesRows.map(m => m.court).filter(Boolean)));
       C = Math.max(1, distinctCourts.length || 1);
     }
 
-    // 2) Stage candidates: no Score, no Court, match time <= (match date + stagingHour:stagingMinute)
-    const stageCandidates = matchesRows.filter(m => {
+    // Eligible by cutoff: time <= matchDate@staging(HH:mm), no final score
+    function eligibleByCutoff(m){
       if (!m.time) return false;
       const cutoff = cutoffForMatchDate(m.time, stagingHour, stagingMinute);
       if (!cutoff) return false;
-      const hasScore = !!m.score;
-      const hasCourt = !!m.court;
-      if (hasScore) return false;        // finished — not staging
-      if (hasCourt) return false;        // already on court — not staging
-      return m.time <= cutoff;           // at or before staging cutoff for that match's date
-    });
-
-    // Sort staged queue by match scheduled time
-    stageCandidates.sort((a,b) => (a.time?.toMillis()||0) - (b.time?.toMillis()||0));
-
-    // 3) Compute ETAs by simulating queue on C courts
-    const activeRemaining = remainingPerCourt.slice(0, Math.max(1, C)); // ensure length C if needed
-    while (activeRemaining.length < C) activeRemaining.push(0);
-    const etas = simulateEtas(activeRemaining, stageCandidates.length);
-
-    // 4) Build per-player rows with ETA; unique by player name
-    const players = [];
-    for (let i=0;i<stageCandidates.length;i++){
-      const m = stageCandidates[i];
-      const eta = etas[i] || now;
-      // ensure ETA isn't in the past
-      const safeEta = eta < now ? now : eta;
-      players.push({ player: m.a, opponent: m.b, m, eta: safeEta });
-      players.push({ player: m.b, opponent: m.a, m, eta: safeEta });
+      if (m.score) return false; // finished excluded
+      return m.time <= cutoff;
     }
-    const unique = uniqueBy(players.filter(p => p.player), p => p.player.toLowerCase());
-    unique.sort((x,y) => (x.eta?.toMillis()||0) - (y.eta?.toMillis()||0));
 
-    // 5) Render
+    // Queue (no court) and also include in-progress (has court), both must meet cutoff
+    const queued = matchesRows.filter(m => !m.court && eligibleByCutoff(m))
+                              .sort((a,b)=>(a.time?.toMillis()||0)-(b.time?.toMillis()||0));
+    const onCourt = matchesRows.filter(m =>  m.court && !m.score && eligibleByCutoff(m));
+
+    // Compute ETAs for queued using simulation
+    const activeRemaining = remainingPerCourt.slice(0, Math.max(1, C));
+    while (activeRemaining.length < C) activeRemaining.push(0);
+    const etas = simulateEtas(activeRemaining, queued.length);
+
+    // Build display rows:
+    // - on-court: ETA = "Now"
+    // - queued: ETA from simulation
+    const rows = [];
+    for (const m of onCourt){
+      const eta = now; // already started
+      rows.push({ m, eta, etaLabel: "Now" });
+    }
+    for (let i=0;i<queued.length;i++){
+      const m = queued[i];
+      const eta = etas[i] || now;
+      const safeEta = eta < now ? now : eta;
+      rows.push({ m, eta: safeEta, etaLabel: safeEta.toFormat("t") });
+    }
+
+    // Split rows into per-player entries, unique by player, ordered by ETA asc
+    const playerRows = [];
+    for (const r of rows){
+      playerRows.push({ player:r.m.a, opponent:r.m.b, m:r.m, eta:r.eta, etaLabel:r.etaLabel });
+      playerRows.push({ player:r.m.b, opponent:r.m.a, m:r.m, eta:r.eta, etaLabel:r.etaLabel });
+    }
+    const unique = uniqueBy(playerRows.filter(p => p.player), p => p.player.toLowerCase());
+    unique.sort((x,y)=>(x.eta?.toMillis()||0)-(y.eta?.toMillis()||0));
+
+    // Render
     playersBodyEl.innerHTML = "";
     if (!unique.length) {
       playersEmptyEl.textContent = "No players to stage right now.";
       playersTableEl.style.display = "none";
-      diagEl.textContent = `Diagnostics: C=${C} active courts, in-progress=${inProgress.length}, staged=0.`;
+      diagEl.textContent = `Diagnostics: courts=${C}, in-progress=${inProgress.length}, queued=0.`;
+      etaBadgeEl.style.display = "inline-block";
+      etaBadgeEl.textContent = `ETA assumes ${MATCH_DURATION_MIN}m matches • Courts in play: ${C} • Queue: 0`;
       return;
     }
 
@@ -248,17 +261,19 @@
         <td>${escapeHtml(r.opponent || "TBD")}</td>
         <td>${escapeHtml(r.m.event || "")}</td>
         <td>${escapeHtml(r.m.round || "")}</td>
-        <td>${escapeHtml(r.m.court || "TBD")}</td>
+        <td>${escapeHtml(r.m.court || "—")}</td>
         <td>${escapeHtml(r.m.id || "")}</td>
-        <td>${r.eta ? r.eta.toFormat("t") : "—"}</td>
-        <td>${r.m.time ? r.m.time.toFormat("t") : "—"}</td>`;
+        <td>${r.m.time ? r.m.time.toFormat("t") : "—"}</td>
+        <td>${r.etaLabel || "—"}</td>`;
       playersBodyEl.appendChild(tr);
     }
 
-    diagEl.textContent = `Diagnostics: C=${C} courts busy, in-progress=${inProgress.length}, staged=${stageCandidates.length}, matchDuration=${MATCH_DURATION_MIN}min.`;
+    diagEl.textContent = `Diagnostics: courts=${C}, in-progress=${inProgress.length}, queued=${queued.length}, matchDuration=${MATCH_DURATION_MIN}m.`;
+    etaBadgeEl.style.display = "inline-block";
+    etaBadgeEl.textContent = `ETA assumes ${MATCH_DURATION_MIN}m matches • Courts in play: ${C} • Queue: ${queued.length}`;
   }
 
-  function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');}
+  function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');}
 
   async function refreshAll(){
     try{
@@ -268,6 +283,7 @@
       stagingTimeBigEl.textContent="Error loading";
       playersEmptyEl.textContent="Error loading";
       diagEl.textContent = String(e);
+      etaBadgeEl.style.display = "none";
     }
   }
 
