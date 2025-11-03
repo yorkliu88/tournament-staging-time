@@ -49,10 +49,10 @@
   const { DateTime } = luxon;
   const zone = "America/Los_Angeles";
 
-  // ✅ Staging time (from your existing sheet)
+  // ✅ Staging time (your existing sheet publishing A2/B2 hour & minute)
   const stagingCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTCnxXDwQE5lgVWkm51FKG48ZPYtOYYQN4Zj-w1M1j6giv69A_CDSSIZQHTtk0ouVg06xH_uGHa-i5A/pub?gid=0&single=true&output=csv";
 
-  // ✅ Matches (from staging-time-match-schedule-update sheet)
+  // ✅ Matches CSV (from staging-time-match-schedule-update sheet — ensure gid matches the Matches tab)
   const matchesCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv";
 
   const stagingTimeBigEl = document.getElementById("stagingTimeBig");
@@ -60,39 +60,65 @@
   const playersTableEl = document.getElementById("playersTable");
   const playersBodyEl = document.getElementById("playersBody");
 
-  let stagingCutoff = null;
   let matchesRows = [];
+  let stagingHour = null, stagingMinute = null; // <-- store hour/minute only
 
   function toKey(s){ return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
   function parseDateAny(s){
     if (!s) return null;
     const d1 = Date.parse(String(s).trim());
     if (!Number.isNaN(d1)) return DateTime.fromMillis(d1).setZone(zone);
-    const fmts = ["EEE M/d/yyyy h:mm a","EEE MM/dd/yyyy h:mm a","M/d/yyyy h:mm a","MM/dd/yyyy h:mm a","yyyy-MM-dd'T'HH:mmZZ","yyyy-MM-dd'T'HH:mm:ssZZ","yyyy-MM-dd HH:mm","yyyy/MM/dd HH:mm"];
+    const fmts = [
+      "EEE M/d/yyyy h:mm a","EEE MM/dd/yyyy h:mm a","M/d/yyyy h:mm a","MM/dd/yyyy h:mm a",
+      "yyyy-MM-dd'T'HH:mmZZ","yyyy-MM-dd'T'HH:mm:ssZZ","yyyy-MM-dd HH:mm","yyyy/MM/dd HH:mm"
+    ];
     for (const f of fmts){ const dt = DateTime.fromFormat(String(s).trim(), f, { zone }); if (dt.isValid) return dt; }
     return null;
   }
   function uniqueBy(arr, keyFn){ const seen = new Set(); const out=[]; for(const it of arr){const k=keyFn(it); if(!seen.has(k)){seen.add(k); out.push(it);} } return out; }
-  async function fetchCsvText(url){ const r = await fetch(url,{cache:"no-store"}); if(!r.ok) throw new Error("Fetch failed "+r.status); return await r.text(); }
+  async function fetchCsvText(url){
+    const r = await fetch(url + (url.includes('?') ? '&' : '?') + 'cb=' + Date.now(), { cache:"no-store" });
+    if(!r.ok) throw new Error("Fetch failed "+r.status);
+    return await r.text();
+  }
+
+  // Build a cutoff from each match's OWN date + (stagingHour:stagingMinute)
+  function cutoffForMatchDate(matchDt, hour, minute){
+    if (!matchDt) return null;
+    return matchDt.set({ hour, minute, second:0, millisecond:0 });
+  }
 
   async function loadStaging(){
     const txt = await fetchCsvText(stagingCsvUrl);
+
     let hour=null, minute=null;
+    // Try header mode
     let p = Papa.parse(txt,{header:true,skipEmptyLines:true});
     if (p.data && p.data.length){
       const first = p.data[0];
       const hourKey = Object.keys(first).find(k=>/hour/i.test(k))||Object.keys(first)[0];
-      const minKey = Object.keys(first).find(k=>/min/i.test(k))||Object.keys(first)[1];
+      const minKey  = Object.keys(first).find(k=>/min/i.test(k)) ||Object.keys(first)[1];
       hour = Number(first[hourKey]); minute = Number(first[minKey]);
     }
+    // Fallback: raw cells
     if ((hour==null||isNaN(hour)||minute==null||isNaN(minute))){
       const p2 = Papa.parse(txt,{header:false,skipEmptyLines:true});
       const rows = p2.data||[];
       if (rows.length>=2){ hour=Number(rows[1][0]); minute=Number(rows[1][1]); }
     }
-    if (isNaN(hour)||isNaN(minute)){ stagingCutoff=null; stagingTimeBigEl.textContent="Unavailable"; return; }
-    stagingCutoff = DateTime.now().setZone(zone).set({hour,minute,second:0,millisecond:0});
-    stagingTimeBigEl.textContent = "Current Staging Time: " + stagingCutoff.toFormat("t");
+
+    if (isNaN(hour)||isNaN(minute)){
+      stagingHour = stagingMinute = null;
+      stagingTimeBigEl.textContent = "Unavailable";
+      return;
+    }
+
+    stagingHour = hour;
+    stagingMinute = minute;
+
+    // Display only (no date binding here)
+    const display = DateTime.now().setZone(zone).set({ hour, minute, second:0, millisecond:0 });
+    stagingTimeBigEl.textContent = "Current Staging Time: " + display.toFormat("t");
   }
 
   async function loadMatches(){
@@ -115,26 +141,74 @@
   }
 
   function renderPlayers(){
-    if(!stagingCutoff||!matchesRows.length){ playersEmptyEl.textContent="Waiting for data…"; playersTableEl.style.display="none"; return; }
-    const stageCandidates = matchesRows.filter(m=>m.time && m.time<=stagingCutoff && !m.score);
-    const players=[];
-    for(const m of stageCandidates){ players.push({player:m.a,opponent:m.b,m}); players.push({player:m.b,opponent:m.a,m}); }
-    const unique = uniqueBy(players.filter(p=>p.player),p=>p.player.toLowerCase());
-    unique.sort((x,y)=>(x.m.time?.toMillis()||0)-(y.m.time?.toMillis()||0));
+    if (stagingHour == null || stagingMinute == null || !matchesRows.length) {
+      playersEmptyEl.textContent = "Waiting for data…";
+      playersTableEl.style.display = "none";
+      return;
+    }
 
-    playersBodyEl.innerHTML="";
-    if(!unique.length){ playersEmptyEl.textContent="No players to stage right now."; playersTableEl.style.display="none"; return; }
-    playersEmptyEl.textContent=""; playersTableEl.style.display="table";
-    for(const r of unique){
-      const tr=document.createElement("tr");
-      tr.innerHTML=`<td><strong>${escapeHtml(r.player)}</strong></td><td>${escapeHtml(r.opponent||"TBD")}</td><td>${escapeHtml(r.m.event||"")}</td><td>${escapeHtml(r.m.round||"")}</td><td>${escapeHtml(r.m.court||"TBD")}</td><td>${escapeHtml(r.m.id||"")}</td><td>${r.m.time?r.m.time.toFormat("t"):"—"}</td>`;
+    // Include match if: (a) match time <= (match's own date + staging hour:minute), (b) no final score,
+    // (c) NOT already in play (court assigned but no score)
+    const stageCandidates = matchesRows.filter(m => {
+      if (!m.time) return false;
+
+      const perMatchCutoff = cutoffForMatchDate(m.time, stagingHour, stagingMinute);
+      if (!perMatchCutoff) return false;
+
+      if (m.time > perMatchCutoff) return false;
+
+      const hasCourt = !!(m.court && m.court.trim());
+      const hasScore = !!(m.score && m.score.trim());
+
+      if (hasCourt && !hasScore) return false; // already playing
+      return !hasScore; // only those not finished
+    });
+
+    // Build unique player list
+    const players = [];
+    for (const m of stageCandidates) {
+      players.push({ player: m.a, opponent: m.b, m });
+      players.push({ player: m.b, opponent: m.a, m });
+    }
+    const unique = uniqueBy(players.filter(p => p.player), p => p.player.toLowerCase());
+    unique.sort((x, y) => (x.m.time?.toMillis() || 0) - (y.m.time?.toMillis() || 0));
+
+    playersBodyEl.innerHTML = "";
+    if (!unique.length) {
+      playersEmptyEl.textContent = "No players to stage right now.";
+      playersTableEl.style.display = "none";
+      return;
+    }
+
+    playersEmptyEl.textContent = "";
+    playersTableEl.style.display = "table";
+    for (const r of unique) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td><strong>${escapeHtml(r.player)}</strong></td>
+        <td>${escapeHtml(r.opponent || "TBD")}</td>
+        <td>${escapeHtml(r.m.event || "")}</td>
+        <td>${escapeHtml(r.m.round || "")}</td>
+        <td>${escapeHtml(r.m.court || "TBD")}</td>
+        <td>${escapeHtml(r.m.id || "")}</td>
+        <td>${r.m.time ? r.m.time.toFormat("t") : "—"}</td>`;
       playersBodyEl.appendChild(tr);
     }
   }
+
   function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');}
 
-  async function refreshAll(){ try{ await Promise.all([loadStaging(),loadMatches()]); renderPlayers(); }catch(e){ stagingTimeBigEl.textContent="Error loading"; playersEmptyEl.textContent="Error loading"; } }
-  refreshAll(); setInterval(refreshAll,60000);
+  async function refreshAll(){
+    try{
+      await Promise.all([loadStaging(), loadMatches()]);
+      renderPlayers();
+    }catch(e){
+      stagingTimeBigEl.textContent="Error loading";
+      playersEmptyEl.textContent="Error loading";
+    }
+  }
+
+  refreshAll();
+  setInterval(refreshAll, 60000);
 })();
 </script>
 </body>
