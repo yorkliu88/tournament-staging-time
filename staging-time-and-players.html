@@ -8,13 +8,11 @@
   body{margin:0;font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:#fafafa;color:#111}
   .wrap{max-width:1100px;margin:0 auto;padding:24px}
   .card{background:#fff;border:1px solid #eaeaea;border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.04);padding:18px 20px;margin-bottom:18px}
-  .title{font-weight:700;font-size:20px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .muted{color:#666;font-size:13px}
   .ok{color:#0b7c3e;font-size:22px;font-weight:700}
   table{width:100%;border-collapse:collapse;font-size:14px}
   th,td{padding:8px;border-top:1px solid #eee;text-align:left}
   thead th{background:#f7f7f7}
-  .badge{display:inline-block;padding:4px 8px;border:1px solid #e5e5e5;background:#f7f7f7;border-radius:999px;font-size:12px;color:#444}
   .diag{margin-top:8px;color:#666;font-size:12px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
@@ -22,19 +20,15 @@
 </head>
 <body>
 <div class="wrap">
-  <h1 style="margin:0 0 12px">Staging Time & Players</h1>
-
   <div class="card">
-    <div class="title">
-      <span>Current Staging Time</span>
-      <span id="etaBadge" class="badge" style="display:none;"></span>
-    </div>
     <div id="stagingTimeBig" class="ok">Loading…</div>
-    <div class="muted">Auto-refresh every 60s</div>
+    <div id="refreshLine" class="muted">
+      Auto-refresh every 60s • Est. Start assumes 30-min matches
+    </div>
   </div>
 
   <div class="card">
-    <div class="title">Players to Stage (includes assigned courts)</div>
+    <h2 style="font-size:20px;font-weight:700;margin:0 0 10px;">Players to Stage (includes assigned courts)</h2>
     <div class="muted" id="playersEmpty">Loading…</div>
     <div style="overflow:auto;">
       <table id="playersTable" style="display:none;">
@@ -56,244 +50,108 @@
   const { DateTime } = luxon;
   const zone = "America/Los_Angeles";
 
-  // ✅ Staging time (A2 hour, B2 minute)
+  // ✅ CSV URLs
   const stagingCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTCnxXDwQE5lgVWkm51FKG48ZPYtOYYQN4Zj-w1M1j6giv69A_CDSSIZQHTtk0ouVg06xH_uGHa-i5A/pub?gid=0&single=true&output=csv";
-
-  // ✅ Matches CSV (ensure gid is the Matches tab)
   const matchesCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv";
 
-  // ⚙️ ETA tuning
-  const MATCH_DURATION_MIN = 30;      // per match
-  const DEFAULT_REMAINING_MIN = 15;   // assumed remaining for in-progress if Start unknown
+  // ⚙️ Settings
+  const MATCH_DURATION_MIN = 30;
+  const DEFAULT_REMAINING_MIN = 15;
 
   const stagingTimeBigEl = document.getElementById("stagingTimeBig");
-  const playersEmptyEl   = document.getElementById("playersEmpty");
-  const playersTableEl   = document.getElementById("playersTable");
-  const playersBodyEl    = document.getElementById("playersBody");
-  const diagEl           = document.getElementById("diag");
-  const etaBadgeEl       = document.getElementById("etaBadge");
+  const refreshLineEl   = document.getElementById("refreshLine");
+  const playersEmptyEl  = document.getElementById("playersEmpty");
+  const playersTableEl  = document.getElementById("playersTable");
+  const playersBodyEl   = document.getElementById("playersBody");
 
   let matchesRows = [];
   let stagingHour = null, stagingMinute = null;
 
-  function toKey(s){ return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
+  function toKey(s){return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
   function parseDateAny(s){
-    if (!s) return null;
-    const raw = String(s).trim();
-    const d1 = Date.parse(raw);
-    if (!Number.isNaN(d1)) return DateTime.fromMillis(d1).setZone(zone);
-    const fmts = [
-      "EEE M/d/yyyy h:mm a","EEE MM/dd/yyyy h:mm a","M/d/yyyy h:mm a","MM/dd/yyyy h:mm a",
-      "yyyy-MM-dd'T'HH:mmZZ","yyyy-MM-dd'T'HH:mm:ssZZ","yyyy-MM-dd HH:mm","yyyy/MM/dd HH:mm"
-    ];
-    for (const f of fmts){ const dt = DateTime.fromFormat(raw, f, { zone }); if (dt.isValid) return dt; }
+    if(!s)return null;
+    const raw=String(s).trim();
+    const d1=Date.parse(raw);
+    if(!Number.isNaN(d1))return DateTime.fromMillis(d1).setZone(zone);
+    const fmts=["EEE M/d/yyyy h:mm a","EEE MM/dd/yyyy h:mm a","M/d/yyyy h:mm a","MM/dd/yyyy h:mm a",
+                "yyyy-MM-dd'T'HH:mmZZ","yyyy-MM-dd'T'HH:mm:ssZZ","yyyy-MM-dd HH:mm","yyyy/MM/dd HH:mm"];
+    for(const f of fmts){const dt=DateTime.fromFormat(raw,f,{zone});if(dt.isValid)return dt;}
     return null;
   }
-  function uniqueBy(arr, keyFn){ const seen = new Set(); const out=[]; for(const it of arr){const k=keyFn(it); if(!seen.has(k)){seen.add(k); out.push(it);} } return out; }
-  async function fetchCsvText(url){
-    const r = await fetch(url + (url.includes('?') ? '&' : '?') + 'cb=' + Date.now(), { cache:"no-store" });
-    if(!r.ok) throw new Error("Fetch failed "+r.status);
-    return await r.text();
-  }
-  function cutoffForMatchDate(matchDt, hour, minute){
-    if (!matchDt) return null;
-    return matchDt.set({ hour, minute, second:0, millisecond:0 });
-  }
+  function uniqueBy(arr, keyFn){const seen=new Set();const out=[];for(const it of arr){const k=keyFn(it);if(!seen.has(k)){seen.add(k);out.push(it);}}return out;}
+  async function fetchCsvText(url){const r=await fetch(url+(url.includes('?')?'&':'?')+'cb='+Date.now(),{cache:"no-store"});if(!r.ok)throw new Error("Fetch failed "+r.status);return await r.text();}
+  function cutoffForMatchDate(matchDt,hour,minute){if(!matchDt)return null;return matchDt.set({hour,minute,second:0,millisecond:0});}
 
   async function loadStaging(){
-    const txt = await fetchCsvText(stagingCsvUrl);
-    let hour=null, minute=null;
-
-    let p = Papa.parse(txt,{header:true,skipEmptyLines:true});
-    if (p.data && p.data.length){
-      const first = p.data[0];
-      const hourKey = Object.keys(first).find(k=>/hour/i.test(k))||Object.keys(first)[0];
-      const minKey  = Object.keys(first).find(k=>/min/i.test(k)) ||Object.keys(first)[1];
-      hour = Number(first[hourKey]); minute = Number(first[minKey]);
-    }
-    if ((hour==null||isNaN(hour)||minute==null||isNaN(minute))){
-      const p2 = Papa.parse(txt,{header:false,skipEmptyLines:true});
-      const rows = p2.data||[];
-      if (rows.length>=2){ hour=Number(rows[1][0]); minute=Number(rows[1][1]); }
-    }
-    if (isNaN(hour)||isNaN(minute)){
-      stagingHour = stagingMinute = null;
-      stagingTimeBigEl.textContent = "Unavailable";
-      etaBadgeEl.style.display = "none";
-      return;
-    }
-
-    stagingHour = hour;
-    stagingMinute = minute;
-
-    const display = DateTime.now().setZone(zone).set({ hour, minute, second:0, millisecond:0 });
-    stagingTimeBigEl.textContent = "Current Staging Time: " + display.toFormat("t");
+    const txt=await fetchCsvText(stagingCsvUrl);
+    let hour=null,minute=null;
+    const p=Papa.parse(txt,{header:true,skipEmptyLines:true});
+    if(p.data&&p.data.length){const first=p.data[0];const hourKey=Object.keys(first).find(k=>/hour/i.test(k))||Object.keys(first)[0];
+      const minKey=Object.keys(first).find(k=>/min/i.test(k))||Object.keys(first)[1];
+      hour=Number(first[hourKey]);minute=Number(first[minKey]);}
+    if((hour==null||isNaN(hour)||minute==null||isNaN(minute))){const p2=Papa.parse(txt,{header:false,skipEmptyLines:true});const rows=p2.data||[];
+      if(rows.length>=2){hour=Number(rows[1][0]);minute=Number(rows[1][1]);}}
+    if(isNaN(hour)||isNaN(minute)){stagingHour=stagingMinute=null;stagingTimeBigEl.textContent="Unavailable";return;}
+    stagingHour=hour;stagingMinute=minute;
+    const display=DateTime.now().setZone(zone).set({hour,minute,second:0,millisecond:0});
+    stagingTimeBigEl.textContent="Current Staging Time: "+display.toFormat("t");
   }
 
   async function loadMatches(){
-    const txt = await fetchCsvText(matchesCsvUrl);
-    const out = Papa.parse(txt,{header:true,skipEmptyLines:true});
-    matchesRows = (out.data||[]).map(r=>{
-      const o={}; for(const [k,v] of Object.entries(r)) o[toKey(k)] = v;
-      const timeStr  = o.time || o.estimated_start || o.est_start || "";
-      const startStr = o.start || o.actual_start || "";
-      return {
-        id:o.id||o.match_id||o.nr||"",
-        timeStr,
-        time:parseDateAny(timeStr),
-        start:parseDateAny(startStr),
-        event:o.event||o.division||"",
-        round:o.round||"",
-        court:(o.court||"").trim(),
-        a:o.team_1||o.player_a||o.player1||o.team1||"",
-        b:o.team_2||o.player_b||o.player2||o.team2||"",
-        score:(o.score||"").trim()
-      };
-    }).filter(r=>r.a||r.b);
+    const txt=await fetchCsvText(matchesCsvUrl);
+    const out=Papa.parse(txt,{header:true,skipEmptyLines:true});
+    matchesRows=(out.data||[]).map(r=>{
+      const o={};for(const[k,v]of Object.entries(r))o[toKey(k)]=v;
+      const timeStr=o.time||o.estimated_start||o.est_start||"";
+      const startStr=o.start||o.actual_start||"";
+      return{id:o.id||o.match_id||o.nr||"",timeStr,time:parseDateAny(timeStr),
+        start:parseDateAny(startStr),event:o.event||o.division||"",round:o.round||"",
+        court:(o.court||"").trim(),a:o.team_1||o.player_a||o.player1||o.team1||"",
+        b:o.team_2||o.player_b||o.player2||o.team2||"",score:(o.score||"").trim()};}).filter(r=>r.a||r.b);
   }
 
-  // Simulate ETAs for queued matches given remaining minutes for active courts
   function simulateEtas(activeCourtsRemainingMin, stagedCount){
-    const now = DateTime.now().setZone(zone);
-    let lanes = activeCourtsRemainingMin.slice();
-    if (lanes.length === 0) lanes = [0];
-
-    const etas = [];
-    for (let i=0;i<stagedCount;i++){
-      let idx = 0;
-      for (let j=1;j<lanes.length;j++) if (lanes[j] < lanes[idx]) idx = j;
-      const etaMin = Math.max(0, lanes[idx]);
-      etas.push(now.plus({ minutes: etaMin }));
-      lanes[idx] = etaMin + MATCH_DURATION_MIN;
-    }
-    return etas;
+    const now=DateTime.now().setZone(zone);let lanes=activeCourtsRemainingMin.slice();if(!lanes.length)lanes=[0];
+    const etas=[];for(let i=0;i<stagedCount;i++){let idx=0;for(let j=1;j<lanes.length;j++)if(lanes[j]<lanes[idx])idx=j;
+      const etaMin=Math.max(0,lanes[idx]);etas.push(now.plus({minutes:etaMin}));lanes[idx]=etaMin+MATCH_DURATION_MIN;}return etas;
   }
 
   function renderPlayers(){
-    const now = DateTime.now().setZone(zone);
+    const now=DateTime.now().setZone(zone);
+    if(stagingHour==null||stagingMinute==null||!matchesRows.length){playersEmptyEl.textContent="Waiting for data…";playersTableEl.style.display="none";return;}
 
-    if (stagingHour == null || stagingMinute == null || !matchesRows.length) {
-      playersEmptyEl.textContent = "Waiting for data…";
-      playersTableEl.style.display = "none";
-      diagEl.textContent = "";
-      etaBadgeEl.style.display = "none";
-      return;
-    }
+    const inProgress=matchesRows.filter(m=>m.court&&!m.score);
+    const remainingPerCourt=inProgress.map(m=>{
+      if(m.start&&m.start.isValid){const elapsed=Math.max(0,now.diff(m.start,'minutes').minutes);return Math.max(0,MATCH_DURATION_MIN-elapsed);}
+      return DEFAULT_REMAINING_MIN;});
+    let C=remainingPerCourt.length;if(C===0){const distinctCourts=Array.from(new Set(matchesRows.map(m=>m.court).filter(Boolean)));C=Math.max(1,distinctCourts.length||1);}
+    function eligibleByCutoff(m){if(!m.time)return false;const cutoff=cutoffForMatchDate(m.time,stagingHour,stagingMinute);if(!cutoff)return false;if(m.score)return false;return m.time<=cutoff;}
+    const queued=matchesRows.filter(m=>!m.court&&eligibleByCutoff(m)).sort((a,b)=>(a.time?.toMillis()||0)-(b.time?.toMillis()||0));
+    const onCourt=matchesRows.filter(m=>m.court&&!m.score&&eligibleByCutoff(m));
+    const activeRemaining=remainingPerCourt.slice(0,Math.max(1,C));while(activeRemaining.length<C)activeRemaining.push(0);
+    const etas=simulateEtas(activeRemaining,queued.length);
+    const rows=[];for(const m of onCourt){rows.push({m,etaLabel:"Now",eta:now});}
+    for(let i=0;i<queued.length;i++){const m=queued[i];const eta=etas[i]||now;rows.push({m,etaLabel:(eta<now?now:eta).toFormat("t"),eta:(eta<now?now:eta)});}
+    const playerRows=[];for(const r of rows){playerRows.push({player:r.m.a,opponent:r.m.b,m:r.m,eta:r.eta,etaLabel:r.etaLabel});
+      playerRows.push({player:r.m.b,opponent:r.m.a,m:r.m,eta:r.eta,etaLabel:r.etaLabel});}
+    const unique=uniqueBy(playerRows.filter(p=>p.player),p=>p.player.toLowerCase());unique.sort((x,y)=>(x.eta?.toMillis()||0)-(y.eta?.toMillis()||0));
 
-    // In-progress (consume courts): has Court, no Score
-    const inProgress = matchesRows.filter(m => m.court && !m.score);
+    playersBodyEl.innerHTML="";if(!unique.length){playersEmptyEl.textContent="No players to stage right now.";playersTableEl.style.display="none";
+      refreshLineEl.textContent=`Auto-refresh every 60s • Est. Start assumes 30-min matches • Courts in play: ${C}, Queue: 0`;return;}
 
-    // Remaining minutes for each active court
-    const remainingPerCourt = inProgress.map(m => {
-      if (m.start && m.start.isValid) {
-        const elapsed = Math.max(0, now.diff(m.start, 'minutes').minutes);
-        return Math.max(0, MATCH_DURATION_MIN - elapsed);
-      }
-      return DEFAULT_REMAINING_MIN;
-    });
-
-    // Infer # of courts (if none in progress, use distinct court names as hint)
-    let C = remainingPerCourt.length;
-    if (C === 0) {
-      const distinctCourts = Array.from(new Set(matchesRows.map(m => m.court).filter(Boolean)));
-      C = Math.max(1, distinctCourts.length || 1);
-    }
-
-    // Eligible by cutoff: time <= matchDate@staging(HH:mm), no final score
-    function eligibleByCutoff(m){
-      if (!m.time) return false;
-      const cutoff = cutoffForMatchDate(m.time, stagingHour, stagingMinute);
-      if (!cutoff) return false;
-      if (m.score) return false; // finished excluded
-      return m.time <= cutoff;
-    }
-
-    // Queue (no court) and also include in-progress (has court), both must meet cutoff
-    const queued = matchesRows.filter(m => !m.court && eligibleByCutoff(m))
-                              .sort((a,b)=>(a.time?.toMillis()||0)-(b.time?.toMillis()||0));
-    const onCourt = matchesRows.filter(m =>  m.court && !m.score && eligibleByCutoff(m));
-
-    // Compute ETAs for queued using simulation
-    const activeRemaining = remainingPerCourt.slice(0, Math.max(1, C));
-    while (activeRemaining.length < C) activeRemaining.push(0);
-    const etas = simulateEtas(activeRemaining, queued.length);
-
-    // Build display rows:
-    // - on-court: ETA = "Now"
-    // - queued: ETA from simulation
-    const rows = [];
-    for (const m of onCourt){
-      rows.push({ m, etaLabel: "Now", eta: now });
-    }
-    for (let i=0;i<queued.length;i++){
-      const m = queued[i];
-      const eta = etas[i] || now;
-      rows.push({ m, etaLabel: (eta < now ? now : eta).toFormat("t"), eta: (eta < now ? now : eta) });
-    }
-
-    // Split rows into per-player entries, unique by player, ordered by ETA asc
-    const playerRows = [];
-    for (const r of rows){
-      playerRows.push({ player:r.m.a, opponent:r.m.b, m:r.m, eta:r.eta, etaLabel:r.etaLabel });
-      playerRows.push({ player:r.m.b, opponent:r.m.a, m:r.m, eta:r.eta, etaLabel:r.etaLabel });
-    }
-    const unique = uniqueBy(playerRows.filter(p => p.player), p => p.player.toLowerCase());
-    unique.sort((x,y)=>(x.eta?.toMillis()||0)-(y.eta?.toMillis()||0));
-
-    // Render
-    playersBodyEl.innerHTML = "";
-    if (!unique.length) {
-      playersEmptyEl.textContent = "No players to stage right now.";
-      playersTableEl.style.display = "none";
-      diagEl.textContent = `Diagnostics: courts=${C}, in-progress=${inProgress.length}, queued=0.`;
-      etaBadgeEl.style.display = "inline-block";
-      etaBadgeEl.textContent = `ETA assumes ${MATCH_DURATION_MIN}m matches • Courts in play: ${C} • Queue: 0`;
-      return;
-    }
-
-    playersEmptyEl.textContent = "";
-    playersTableEl.style.display = "table";
-    for (const r of unique) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td><strong>${escapeHtml(r.player)}</strong></td>
-        <td>${escapeHtml(r.opponent || "TBD")}</td>
-        <td>${escapeHtml(r.m.event || "")}</td>
-        <td>${escapeHtml(r.m.round || "")}</td>
-        <td>${escapeHtml(r.m.court || "—")}</td>
-        <td>${escapeHtml(r.m.id || "")}</td>
-        <td>${r.m.time ? r.m.time.toFormat("t") : "—"}</td>
-        <td>${r.etaLabel || "—"}</td>`;
-      playersBodyEl.appendChild(tr);
-    }
-
-    diagEl.textContent = `Diagnostics: courts=${C}, in-progress=${inProgress.length}, queued=${queued.length}, matchDuration=${MATCH_DURATION_MIN}m.`;
-    etaBadgeEl.style.display = "inline-block";
-    etaBadgeEl.textContent = `ETA assumes ${MATCH_DURATION_MIN}m matches • Courts in play: ${C} • Queue: ${queued.length}`;
+    playersEmptyEl.textContent="";playersTableEl.style.display="table";
+    for(const r of unique){const tr=document.createElement("tr");tr.innerHTML=`<td><strong>${escapeHtml(r.player)}</strong></td>
+      <td>${escapeHtml(r.opponent||"TBD")}</td><td>${escapeHtml(r.m.event||"")}</td><td>${escapeHtml(r.m.round||"")}</td>
+      <td>${escapeHtml(r.m.court||"—")}</td><td>${escapeHtml(r.m.id||"")}</td><td>${r.m.time?r.m.time.toFormat("t"):"—"}</td><td>${r.etaLabel||"—"}</td>`;
+      playersBodyEl.appendChild(tr);}
+    refreshLineEl.textContent=`Auto-refresh every 60s • Est. Start assumes 30-min matches • Courts in play: ${C}, Queue: ${queued.length}`;
   }
 
-  function escapeHtml(s){
-    return String(s ?? '')
-      .replace(/&/g,'&amp;')
-      .replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;')
-      .replace(/\"/g,'&quot;')
-      .replace(/'/g,'&#039;');
-  }
+  function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');}
 
-  async function refreshAll(){
-    try{
-      await Promise.all([loadStaging(), loadMatches()]);
-      renderPlayers();
-    }catch(e){
-      stagingTimeBigEl.textContent="Error loading";
-      playersEmptyEl.textContent="Error loading";
-      diagEl.textContent = String(e);
-      etaBadgeEl.style.display = "none";
-    }
-  }
-
-  refreshAll();
-  setInterval(refreshAll, 60000);
+  async function refreshAll(){try{await Promise.all([loadStaging(),loadMatches()]);renderPlayers();}
+    catch(e){stagingTimeBigEl.textContent="Error loading";playersEmptyEl.textContent="Error loading";refreshLineEl.textContent="Error";}}
+  refreshAll();setInterval(refreshAll,60000);
 })();
 </script>
 </body>
