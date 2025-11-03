@@ -22,7 +22,7 @@
   <div class="card">
     <div id="stagingTimeBig" class="ok">Loading…</div>
     <div id="refreshLine" class="muted">
-      Auto-refresh every 60s • Est. Start assumes 30-min matches
+      Auto-refresh every 30s • Est. Start assumes 30-min matches
     </div>
   </div>
 
@@ -34,7 +34,7 @@
         <thead>
           <tr>
             <th>Player 1</th><th>Player 2</th><th>Division</th><th>Round</th>
-            <th>Court</th><th>Match ID</th><th>Scheduled</th><th>Est. Start</th>
+            <th>Court</th><th>Scheduled</th><th>Est. Start</th>
           </tr>
         </thead>
         <tbody id="playersBody"></tbody>
@@ -52,6 +52,7 @@
   const matchesCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv";
 
   const MATCH_DURATION_MIN = 30, DEFAULT_REMAINING_MIN = 15;
+  const REFRESH_INTERVAL_MS = 30000; // 30 seconds
   const stagingTimeBigEl = document.getElementById("stagingTimeBig");
   const refreshLineEl = document.getElementById("refreshLine");
   const playersEmptyEl = document.getElementById("playersEmpty");
@@ -93,10 +94,13 @@
       const o={};for(const[k,v]of Object.entries(r))o[toKey(k)]=v;
       const timeStr=o.time||o.estimated_start||o.est_start||"";
       const startStr=o.start||o.actual_start||"";
-      return{id:o.id||o.match_id||o.nr||"",time:parseDateAny(timeStr),start:parseDateAny(startStr),
+      return{
+        time:parseDateAny(timeStr),start:parseDateAny(startStr),
         event:o.event||o.division||"",round:o.round||"",court:(o.court||"").trim(),
         a:o.team_1||o.player_a||o.player1||o.team1||"",b:o.team_2||o.player_b||o.player2||o.team2||"",
-        score:(o.score||"").trim()};}).filter(r=>r.a||r.b);
+        score:(o.score||"").trim()
+      };
+    }).filter(r=>r.a||r.b);
   }
 
   function simulateEtas(activeCourtsRemainingMin,stagedCount){
@@ -126,7 +130,7 @@
     const etas=simulateEtas(activeRemaining,queued.length);
     const all=[...onCourt.map(m=>({m,etaLabel:"Playing",eta:now})),...queued.map((m,i)=>({m,etaLabel:(etas[i]||now).toFormat("t"),eta:etas[i]||now}))];
     if(!all.length){playersEmptyEl.textContent="No matches to stage right now.";playersTableEl.style.display="none";
-      refreshLineEl.textContent=`Auto-refresh every 60s • Est. Start assumes 30-min matches • Courts in play: ${C}, Queue: 0`;return;}
+      refreshLineEl.textContent=`Auto-refresh every 30s • Est. Start assumes 30-min matches • Courts in play: ${C}, Queue: 0`;return;}
 
     all.sort((x,y)=>(x.eta?.toMillis()||0)-(y.eta?.toMillis()||0));
     playersEmptyEl.textContent="";playersTableEl.style.display="table";playersBodyEl.innerHTML="";
@@ -135,17 +139,17 @@
       const tr=document.createElement("tr");
       tr.innerHTML=`<td>${escapeHtml(m.a)}</td><td>${escapeHtml(m.b)}</td>
         <td>${escapeHtml(m.event)}</td><td>${escapeHtml(m.round)}</td>
-        <td>${escapeHtml(m.court||"—")}</td><td>${escapeHtml(m.id||"")}</td>
+        <td>${escapeHtml(m.court||"—")}</td>
         <td>${m.time?m.time.toFormat("t"):"—"}</td><td>${r.etaLabel||"—"}</td>`;
       playersBodyEl.appendChild(tr);
     }
-    refreshLineEl.textContent=`Auto-refresh every 60s • Est. Start assumes 30-min matches • Courts in play: ${C}, Queue: ${queued.length}`;
+    refreshLineEl.textContent=`Auto-refresh every 30s • Est. Start assumes 30-min matches • Courts in play: ${C}, Queue: ${queued.length}`;
   }
 
   function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');}
   async function refreshAll(){try{await Promise.all([loadStaging(),loadMatches()]);renderPlayers();}
     catch(e){stagingTimeBigEl.textContent="Error";playersEmptyEl.textContent="Error";refreshLineEl.textContent="Error";}}
-  refreshAll();setInterval(refreshAll,60000);
+  refreshAll();setInterval(refreshAll,REFRESH_INTERVAL_MS);
 })();
 </script>
 </body>
