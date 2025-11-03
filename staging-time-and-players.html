@@ -124,7 +124,7 @@
     const onCourt=matchesRows.filter(m=>m.court&&!m.score&&eligibleByCutoff(m));
     const activeRemaining=remainingPerCourt.slice(0,Math.max(1,C));while(activeRemaining.length<C)activeRemaining.push(0);
     const etas=simulateEtas(activeRemaining,queued.length);
-    const all=[...onCourt.map(m=>({m,etaLabel:"Now",eta:now})),...queued.map((m,i)=>({m,etaLabel:(etas[i]||now).toFormat("t"),eta:etas[i]||now}))];
+    const all=[...onCourt.map(m=>({m,etaLabel:"Playing",eta:now})),...queued.map((m,i)=>({m,etaLabel:(etas[i]||now).toFormat("t"),eta:etas[i]||now}))];
     if(!all.length){playersEmptyEl.textContent="No matches to stage right now.";playersTableEl.style.display="none";
       refreshLineEl.textContent=`Auto-refresh every 60s • Est. Start assumes 30-min matches • Courts in play: ${C}, Queue: 0`;return;}
 
