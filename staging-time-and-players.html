@@ -27,7 +27,7 @@
   </div>
 
   <div class="card">
-    <h2 style="font-size:20px;font-weight:700;margin:0 0 10px;">Matches to Stage (includes assigned courts)</h2>
+    <h2 style="font-size:20px;font-weight:700;margin:0 0 10px;">Staging Players</h2>
     <div class="muted" id="playersEmpty">Loading…</div>
     <div style="overflow:auto;">
       <table id="playersTable" style="display:none;">
@@ -83,7 +83,7 @@
     if(isNaN(hour)||isNaN(minute)){stagingHour=stagingMinute=null;stagingTimeBigEl.textContent="Unavailable";return;}
     stagingHour=hour;stagingMinute=minute;
     const display=DateTime.now().setZone(zone).set({hour,minute});
-    stagingTimeBigEl.textContent="Current Staging Time: "+display.toFormat("t");
+    stagingTimeBigEl.textContent="Staging Time: "+display.toFormat("t");
   }
 
   async function loadMatches(){
