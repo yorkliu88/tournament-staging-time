@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Match Schedule Update (Matches Only)</title>
 
-<!-- Optional but recommended: prevent this tool page from being cached -->
+<!-- Prevent this tool page itself from being cached -->
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
@@ -46,6 +46,7 @@
     <div class="title">2) Upload Tournament XLSX</div>
     <div class="muted">Pick your tournament export (.xlsx). We’ll detect the real header row, normalize columns, then upload to <b>Matches</b>.</div>
     <input id="xlsxInput" type="file" accept=".xlsx,.XLSX,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+    <div id="fileInfo" class="kv" style="margin-top:6px;color:#555"></div>
     <div style="margin-top:10px">
       <button class="btn" id="sendBtn">Send to Google Sheet</button>
       <span id="status" style="margin-left:10px" class="muted">Idle</span>
@@ -59,13 +60,12 @@
       Used by your <b>staging-time-and-players.html</b>:
     </div>
 
-    <!-- Updated to /export?format=csv using your Spreadsheet ID -->
+    <!-- Uses /export?format=csv with your Spreadsheet ID -->
     <input id="csvUrlDisplay" type="text" readonly />
 
     <div class="muted" style="margin-top:8px">
       <a id="openCsv" target="_blank" href="#">Open CSV</a>
       &nbsp;•&nbsp;
-      <!-- A general view link to the sheet (will require auth if not shared) -->
       <a id="openSheet" target="_blank" href="#">Open Sheet</a>
     </div>
   </div>
@@ -85,7 +85,7 @@
 <script>
 (function(){
   // ---- CONFIG ----
-  // Use the export endpoint (more reliable with cache-busting than /pub)
+  // Export endpoint (more reliable with cache-busting than /pub)
   const SPREADSHEET_ID = "1_F8AhXdps4bDcDm_kKs20Mej1f1OX2mCKJsW2hznJJM";
   const GID = "0"; // change if your Matches tab uses a different gid
   const MATCHES_CSV_URL =
@@ -99,6 +99,7 @@
   const theadEl = document.getElementById('thead');
   const tbodyEl = document.getElementById('tbody');
   const diagEl = document.getElementById('diag');
+  const fileInfoEl = document.getElementById('fileInfo');
 
   // update link block
   const csvUrlDisplay = document.getElementById('csvUrlDisplay');
@@ -192,11 +193,16 @@
   }
   function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;');}
 
-  async function parseSelectedFileIfNeeded(){
-    if (normalizedRows.length > 0) return true;
-    const file = xlsxInput.files && xlsxInput.files[0] ? xlsxInput.files[0] : lastFile;
+  // Always re-parse the currently selected file.
+  async function parseSelectedFile(){
+    const file = xlsxInput.files && xlsxInput.files[0] ? xlsxInput.files[0] : null;
     if (!file) return false;
     lastFile = file;
+
+    // Show file info so we can confirm it's the new file even with same name
+    const kb = Math.round(file.size / 102.4) / 10;
+    fileInfoEl.textContent = `Selected: ${file.name} — ${kb} KB — modified ${new Date(file.lastModified).toLocaleString()}`;
+
     try{
       statusEl.textContent='Parsing XLSX…';
       const data = await file.arrayBuffer();
@@ -249,9 +255,15 @@
     }
   }
 
+  // Force change to fire even if user picks the same filename again
+  xlsxInput.addEventListener('click', () => {
+    // Clearing value ensures picking the same-named file triggers 'change'
+    xlsxInput.value = '';
+  });
+
   xlsxInput.addEventListener('change', async () => {
     normalizedRows = [];
-    await parseSelectedFileIfNeeded();
+    await parseSelectedFile();
   });
 
   // ---- SEND: post → brief wait → fetch CSV with cache-bust to verify ----
@@ -259,7 +271,8 @@
     const endpoint = (endpointEl.value||'').trim();
     if (!endpoint) { alert('Missing Apps Script URL.'); return; }
 
-    const ok = await parseSelectedFileIfNeeded();
+    // Always parse what is currently selected (don’t rely on cached rows)
+    const ok = await parseSelectedFile();
     if (!ok) { alert('Could not parse any rows from the XLSX.'); return; }
 
     const body = { matches: normalizedRows, overwrite: true };
@@ -277,7 +290,7 @@
       // 2) Wait briefly for Apps Script to write
       await new Promise(r => setTimeout(r, 2000));
 
-      // 3) Poll the CSV (export endpoint) to verify write — with cache-bust
+      // 3) Verify by fetching the CSV (export endpoint) with cache-bust
       const bust = (MATCHES_CSV_URL.includes('?') ? '&' : '?') + 'cb=' + Date.now();
       const resp = await fetch(MATCHES_CSV_URL + bust, { cache: 'no-store', headers: { 'Cache-Control': 'no-store' } });
       if (!resp.ok) throw new Error('CSV fetch failed ' + resp.status);
@@ -287,7 +300,7 @@
       const rowCount = lines.length > 1 ? (lines.length - 1) : 0;
 
       if (rowCount > 0) {
-        statusEl.innerHTML = `<span class="ok">Success: CSV shows ${rowCount} data rows.</span>`;
+        statusEl.innerHTML = `<span class="ok">Success: CSV shows ${rowCount} data rows (refreshed at ${new Date().toLocaleTimeString()}).</span>`;
       } else {
         statusEl.innerHTML = `<span class="warn">Uploaded, but CSV shows 0 rows. Ensure this Web App writes to the SAME spreadsheet/tab you export (gid=${GID}), or use openById in Apps Script.</span>`;
       }
