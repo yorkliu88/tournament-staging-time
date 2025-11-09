@@ -4,6 +4,12 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Match Schedule Update (Matches Only)</title>
+
+<!-- Optional but recommended: prevent this tool page from being cached -->
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+
 <style>
   body{margin:0;font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:#fafafa;color:#111}
   .wrap{max-width:900px;margin:0 auto;padding:24px}
@@ -52,14 +58,15 @@
     <div class="muted" style="margin-bottom:8px">
       Used by your <b>staging-time-and-players.html</b>:
     </div>
-    <input type="text" readonly
-      value="https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv" />
+
+    <!-- Updated to /export?format=csv using your Spreadsheet ID -->
+    <input id="csvUrlDisplay" type="text" readonly />
+
     <div class="muted" style="margin-top:8px">
-      <a target="_blank" href="https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv">
-        Open CSV</a>
+      <a id="openCsv" target="_blank" href="#">Open CSV</a>
       &nbsp;•&nbsp;
-      <a target="_blank" href="https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pubhtml?gid=0&single=true">
-        HTML View</a>
+      <!-- A general view link to the sheet (will require auth if not shared) -->
+      <a id="openSheet" target="_blank" href="#">Open Sheet</a>
     </div>
   </div>
 
@@ -78,7 +85,11 @@
 <script>
 (function(){
   // ---- CONFIG ----
-  const MATCHES_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSiikhANBenfXD_aaQTFjMPDDozxaPFdn986N9Q9k9AzKD9NycWNblIOcGyNrhRHSIXNkBF4SrLksMU/pub?gid=0&single=true&output=csv";
+  // Use the export endpoint (more reliable with cache-busting than /pub)
+  const SPREADSHEET_ID = "1_F8AhXdps4bDcDm_kKs20Mej1f1OX2mCKJsW2hznJJM";
+  const GID = "0"; // change if your Matches tab uses a different gid
+  const MATCHES_CSV_URL =
+    `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${GID}`;
 
   // ---- Elements ----
   const endpointEl = document.getElementById('endpoint');
@@ -88,6 +99,14 @@
   const theadEl = document.getElementById('thead');
   const tbodyEl = document.getElementById('tbody');
   const diagEl = document.getElementById('diag');
+
+  // update link block
+  const csvUrlDisplay = document.getElementById('csvUrlDisplay');
+  const openCsv = document.getElementById('openCsv');
+  const openSheet = document.getElementById('openSheet');
+  if (csvUrlDisplay) csvUrlDisplay.value = MATCHES_CSV_URL;
+  if (openCsv) openCsv.href = MATCHES_CSV_URL;
+  if (openSheet) openSheet.href = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit#gid=${GID}`;
 
   let normalizedRows = [];
   let lastFile = null;
@@ -235,7 +254,7 @@
     await parseSelectedFileIfNeeded();
   });
 
-  // ---- SEND: uses no-cors, then verifies by polling the published CSV ----
+  // ---- SEND: post → brief wait → fetch CSV with cache-bust to verify ----
   sendBtn.addEventListener('click', async () => {
     const endpoint = (endpointEl.value||'').trim();
     if (!endpoint) { alert('Missing Apps Script URL.'); return; }
@@ -258,9 +277,9 @@
       // 2) Wait briefly for Apps Script to write
       await new Promise(r => setTimeout(r, 2000));
 
-      // 3) Poll the published CSV to verify write
+      // 3) Poll the CSV (export endpoint) to verify write — with cache-bust
       const bust = (MATCHES_CSV_URL.includes('?') ? '&' : '?') + 'cb=' + Date.now();
-      const resp = await fetch(MATCHES_CSV_URL + bust, { cache: 'no-store' });
+      const resp = await fetch(MATCHES_CSV_URL + bust, { cache: 'no-store', headers: { 'Cache-Control': 'no-store' } });
       if (!resp.ok) throw new Error('CSV fetch failed ' + resp.status);
       const csvText = await resp.text();
 
@@ -270,7 +289,7 @@
       if (rowCount > 0) {
         statusEl.innerHTML = `<span class="ok">Success: CSV shows ${rowCount} data rows.</span>`;
       } else {
-        statusEl.innerHTML = `<span class="warn">Uploaded, but CSV shows 0 rows. Ensure this Web App is bound to the SAME sheet you published, or use openById in Apps Script.</span>`;
+        statusEl.innerHTML = `<span class="warn">Uploaded, but CSV shows 0 rows. Ensure this Web App writes to the SAME spreadsheet/tab you export (gid=${GID}), or use openById in Apps Script.</span>`;
       }
     } catch (err) {
       statusEl.innerHTML = `<span class="warn">Upload may have succeeded, but verification failed: ${escapeHtml(String(err))}</span>`;
